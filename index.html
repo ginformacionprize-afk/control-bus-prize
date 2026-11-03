@@ -4,6 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Control Bus Prize</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0F5257">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Control Bus">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@600;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -152,6 +160,7 @@ h2{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-weight:800;font
     <button class="btn" type="submit">Ingresar</button>
   </form>
   <div class="foot">
+    <button class="btn" type="button" id="bInstall" style="margin-bottom:14px" hidden>Instalar app en el celular</button>
     <span id="srcInfo"></span><br>
     <button class="link" type="button" id="bLoadLogin">Cargar Excel (USUARIOS, CAPACIDADES y ASIGNACIONES)</button>
   </div>
@@ -233,6 +242,7 @@ h2{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-weight:800;font
 </div>
 
 <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+<div id="updBar" class="toast hidden" role="status" style="bottom:calc(70px + env(safe-area-inset-bottom,0px))">Actualizando la app a la última versión…</div>
 
 <input type="file" id="fileXls" accept=".xlsx,.xls" class="hidden">
 
@@ -566,7 +576,7 @@ async function syncNow(silent){
     syncing = false; $("bSync").classList.remove("spin"); updateSync();
   }
 }
-$("bSync").onclick = () => syncNow(false);
+$("bSync").onclick = async () => { await loadRemote(true); syncNow(false); };
 window.addEventListener("online", () => syncNow(true));
 
 // ---------- escaneo QR / código de barras ----------
@@ -613,6 +623,48 @@ function resumeCam(){
 }
 
 load(); loadReg(); showSrc(); $("iUser").focus();
+
+// ---------- PWA: instalación y actualización automática ----------
+let installEvt = null;
+window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); installEvt = e; $("bInstall").hidden = false; });
+$("bInstall").onclick = async () => { if(!installEvt) return; installEvt.prompt(); try{ await installEvt.userChoice; }catch(e){} installEvt = null; $("bInstall").hidden = true; };
+window.addEventListener("appinstalled", () => { $("bInstall").hidden = true; toast("App instalada. Ábrela desde el ícono Control Bus."); });
+
+if("serviceWorker" in navigator && window.top === window.self && location.protocol === "https:"){
+  navigator.serviceWorker.register("sw.js").then(reg => {
+    const check = () => reg.update().catch(()=>{});
+    setInterval(check, 15 * 60 * 1000);
+    document.addEventListener("visibilitychange", () => { if(document.visibilityState === "visible") check(); });
+  }).catch(()=>{});
+  // Cuando se publica una versión nueva, la app se recarga sola (sin perder registros: están guardados en el equipo)
+  let reloading = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if(reloading) return; reloading = true;
+    if(pending) return; // no recargar en medio de una decisión
+    $("updBar").classList.remove("hidden");
+    setTimeout(() => location.reload(), 800);
+  });
+}
+
+// ---------- Datos desde la nube (se actualizan solos) ----------
+// La app busca datos/BASE_MAESTRA_ASIGNACIONES.xlsx en el mismo sitio. Al reemplazar ese archivo, todos los celulares se actualizan.
+async function loadRemote(silent){
+  if(location.protocol !== "https:" || window.top !== window.self) return false;
+  try{
+    const r = await fetch("datos/BASE_MAESTRA_ASIGNACIONES.xlsx?t=" + Date.now(), {cache:"no-store"});
+    if(!r.ok) return false;
+    const wb = XLSX.read(await r.arrayBuffer(), {type:"array"});
+    const now = new Date();
+    DATA = parseWorkbook(wb, "NUBE · " + now.toLocaleDateString("es-PE") + " " + pad2(now.getHours()) + ":" + pad2(now.getMinutes()));
+    save(); showSrc();
+    if(USER && !$("vValid").classList.contains("hidden")){ renderStats(); }
+    if(!silent) toast("Datos actualizados desde la nube.");
+    return true;
+  }catch(e){ return false; }
+}
+loadRemote(true);
+document.addEventListener("visibilitychange", () => { if(document.visibilityState === "visible") loadRemote(true); });
+setInterval(() => loadRemote(true), 10 * 60 * 1000);
 </script>
 </body>
 </html>
