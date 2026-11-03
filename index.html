@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Control Bus Prize</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@600;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+:root{
+  --bg:#E9EFEE; --surface:#FFFFFF; --ink:#13262A; --muted:#5A6E70; --line:#CCD8D6;
+  --brand:#0F5257; --brand-ink:#FFFFFF; --ok:#17784A; --ok-bg:#E3F3EA; --bad:#BE3227; --bad-bg:#FBE7E4; --warn:#9A5F0C; --warn-bg:#FBF0DC;
+  --field:#F4F7F6;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0D1A1C; --surface:#152629; --ink:#E4EEEC; --muted:#93A8A6; --line:#2A4044;
+    --brand:#2C8C8F; --brand-ink:#FFFFFF; --ok:#43C281; --ok-bg:#163A29; --bad:#F07463; --bad-bg:#45201B; --warn:#E5AC4F; --warn-bg:#3E2E12; --field:#1C3135;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0D1A1C; --surface:#152629; --ink:#E4EEEC; --muted:#93A8A6; --line:#2A4044;
+  --brand:#2C8C8F; --brand-ink:#FFFFFF; --ok:#43C281; --ok-bg:#163A29; --bad:#F07463; --bad-bg:#45201B; --warn:#E5AC4F; --warn-bg:#3E2E12; --field:#1C3135;
+  color-scheme:dark;
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{height:100%;margin:0}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{background:var(--bg);color:var(--ink);font-family:"Barlow",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:16px;line-height:1.45}
+button,input,select{font:inherit;color:inherit}
+.hidden{display:none!important}
+.wrap{max-width:460px;margin:0 auto;padding:20px 18px 40px}
+
+.login{min-height:100%;display:flex;flex-direction:column;justify-content:center}
+.brandmark{display:flex;align-items:center;gap:12px;margin-bottom:28px}
+.brandmark .sq{width:46px;height:46px;border-radius:10px;background:var(--brand);display:grid;place-items:center;color:var(--brand-ink)}
+.brandmark h1{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-weight:800;font-size:30px;line-height:1;margin:0}
+.brandmark p{margin:2px 0 0;color:var(--muted);font-size:14px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:22px}
+label{display:block;font-weight:600;font-size:14px;margin:0 0 6px}
+.f{margin-bottom:16px}
+input[type=text],input[type=password],input[type=tel],input[type=date],select{
+  width:100%;padding:13px 14px;border:1.5px solid var(--line);border-radius:10px;background:var(--field);outline:none;text-transform:uppercase}
+input[type=password]{text-transform:none}
+input:focus,select:focus{border-color:var(--brand)}
+input:disabled,select:disabled{opacity:.75}
+.role{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;border-radius:10px;background:var(--field);border:1.5px dashed var(--line);min-height:48px}
+.role span{color:var(--muted);font-size:14px}
+.role strong{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-size:20px;letter-spacing:.3px;color:var(--brand);text-align:right}
+.btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:14px;border:0;border-radius:10px;background:var(--brand);color:var(--brand-ink);font-weight:700;font-size:16px;cursor:pointer}
+.btn.ghost{background:transparent;color:var(--ink);border:1.5px solid var(--line)}
+.btn:focus-visible,.tile:focus-visible,.link:focus-visible{outline:3px solid var(--warn);outline-offset:2px}
+.err{color:var(--bad);font-weight:600;font-size:14px;margin:-4px 0 14px}
+.err:empty{display:none}
+.foot{margin-top:18px;text-align:center;font-size:14px;color:var(--muted)}
+.link{background:none;border:0;color:var(--brand);font-weight:600;cursor:pointer;text-decoration:underline;padding:4px}
+
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--brand);color:var(--brand-ink)}
+body.app::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--brand)}
+.top .in{max-width:460px;margin:0 auto;padding:12px 18px;display:flex;align-items:center;gap:10px}
+.top .who{flex:1;min-width:0}
+.top .who b{display:block;font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-size:22px;line-height:1.1}
+.top .who small{display:block;opacity:.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.top button{background:rgba(255,255,255,.14);border:0;color:inherit;border-radius:8px;padding:8px 12px;font-weight:600;cursor:pointer}
+.top .sync{position:relative;display:flex;align-items:center;gap:6px}
+.top .sync.spin svg{animation:rot 1s linear infinite}
+@keyframes rot{to{transform:rotate(360deg)}}
+.badge{position:absolute;top:-6px;right:-6px;min-width:20px;height:20px;padding:0 5px;border-radius:10px;background:#E8A33A;color:#13262A;font-size:12px;font-weight:800;display:grid;place-items:center}
+.badge.zero{background:#43C281}
+.toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:40;max-width:min(420px,calc(100% - 32px));background:var(--ink);color:var(--bg);padding:12px 16px;border-radius:10px;font-size:14px;font-weight:600;box-shadow:0 6px 20px rgba(0,0,0,.25)}
+
+.tiles{display:grid;gap:12px;margin-top:8px}
+.tile{display:flex;align-items:center;gap:16px;text-align:left;width:100%;padding:20px;background:var(--surface);border:1px solid var(--line);border-radius:14px;cursor:pointer}
+.tile .ic{width:54px;height:54px;border-radius:12px;background:var(--brand);color:var(--brand-ink);display:grid;place-items:center;flex:none}
+.tile .ic.alt{background:var(--field);color:var(--brand);border:1.5px solid var(--line)}
+.tile b{display:block;font-size:18px}
+.tile small{color:var(--muted)}
+h2{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-weight:800;font-size:28px;margin:6px 0 14px;line-height:1.1}
+
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.dnirow{display:flex;gap:8px}
+.dnirow input{flex:1;min-width:0}
+.dnirow .btn{width:auto;padding:0 18px}
+.dni{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-size:28px!important;letter-spacing:3px;text-align:center}
+.scanbtns{display:grid;grid-template-columns:1fr;gap:10px;margin-top:10px}
+#reader{border-radius:12px;overflow:hidden;margin-top:12px;background:#000}
+
+/* Resultado: debajo del DNI, compacto */
+.result{display:flex;gap:12px;margin-top:14px;padding:14px;border-radius:12px;border:1.5px solid;border-left-width:6px}
+.result.ok{background:var(--ok-bg);border-color:var(--ok)}
+.result.bad{background:var(--bad-bg);border-color:var(--bad)}
+.result.warn{background:var(--warn-bg);border-color:var(--warn)}
+.result .ri{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;flex:none;color:#fff}
+.result.ok .ri{background:var(--ok)} .result.bad .ri{background:var(--bad)} .result.warn .ri{background:var(--warn)}
+.result .rt{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-weight:800;font-size:22px;line-height:1.1;margin:2px 0 4px}
+.result.ok .rt{color:var(--ok)} .result.bad .rt{color:var(--bad)} .result.warn .rt{color:var(--warn)}
+.result .rn{font-weight:700;margin:0}
+.result .rd{font-size:14px;color:var(--muted);margin:0 0 6px}
+.result .rx{font-size:14px;margin:0}
+.result .rx b{font-weight:700}
+.result ul{margin:4px 0 0;padding-left:18px;font-size:14px}
+@media (prefers-reduced-motion:no-preference){.result{animation:in .2s ease-out}@keyframes in{from{opacity:0;transform:translateY(-4px)}}}
+
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:0 0 16px}
+.stat{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 6px;text-align:center}
+.stat b{display:block;font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-weight:800;font-size:28px;line-height:1}
+.stat small{color:var(--muted);font-size:12px}
+.stat.free b{color:var(--ok)} .stat.full b{color:var(--bad)}
+.seg{display:grid;grid-template-columns:1fr 1fr;gap:0;border:1.5px solid var(--line);border-radius:10px;overflow:hidden;background:var(--field)}
+.seg button{border:0;background:transparent;padding:12px;font-weight:700;cursor:pointer;color:var(--muted)}
+.seg button[aria-pressed="true"]{background:var(--brand);color:var(--brand-ink)}
+.seg button:focus-visible{outline:3px solid var(--warn);outline-offset:-3px}
+.modal{position:fixed;inset:0;z-index:30;background:rgba(10,20,22,.55);display:flex;align-items:center;justify-content:center;padding:20px}
+.modal .box{background:var(--surface);border-radius:14px;padding:20px;max-width:380px;width:100%;border:1px solid var(--line)}
+.modal .mt{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-weight:800;font-size:24px;margin:0 0 6px}
+.modal p{margin:0 0 6px}
+.modal .seats{font-size:14px;color:var(--muted);margin-bottom:16px}
+.modal .prog{font-size:14px;background:var(--bad-bg);border-left:4px solid var(--bad);border-radius:6px;padding:8px 10px;margin:8px 0 10px}
+.modal .seats.full{color:var(--bad);font-weight:600}
+.modal .row2 .btn.no{background:var(--bad)}
+.log li .st{font-size:12px;font-weight:700;white-space:nowrap}
+.log{margin-top:22px}
+.log h3{font-size:15px;margin:0 0 8px;color:var(--muted);font-weight:600}
+.log ul{list-style:none;margin:0;padding:0;background:var(--surface);border:1px solid var(--line);border-radius:12px}
+.log li{display:flex;gap:10px;align-items:center;padding:10px 14px;border-top:1px solid var(--line);font-size:14px}
+.log li:first-child{border-top:0}
+.dot{width:10px;height:10px;border-radius:50%;flex:none}
+.log li .n{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.log li time{color:var(--muted)}
+.empty{padding:14px;color:var(--muted);font-size:14px}
+</style>
+</head>
+<body>
+
+<section id="vLogin" class="login wrap">
+  <div class="brandmark">
+    <div class="sq" aria-hidden="true">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="15" rx="3"/><path d="M4 11h16M8 18v3M16 18v3"/><circle cx="8" cy="14.5" r=".6" fill="currentColor"/><circle cx="16" cy="14.5" r=".6" fill="currentColor"/></svg>
+    </div>
+    <div><h1>Control Bus Prize</h1></div>
+  </div>
+  <form class="panel" id="fLogin" autocomplete="off" novalidate>
+    <div class="f"><label for="iUser">Placa</label><input type="text" id="iUser" autocapitalize="characters" placeholder="ABC-123" required></div>
+    <div class="f"><label for="iPass">Contraseña</label><input type="password" id="iPass" required></div>
+    <div class="f"><label>Rol</label><div class="role" aria-live="polite"><span id="roleHint">Se completa al escribir la placa</span><strong id="roleVal"></strong></div></div>
+    <div class="err" id="loginErr" role="alert"></div>
+    <button class="btn" type="submit">Ingresar</button>
+  </form>
+  <div class="foot">
+    <span id="srcInfo"></span><br>
+    <button class="link" type="button" id="bLoadLogin">Cargar Excel (USUARIOS, CAPACIDADES y ASIGNACIONES)</button>
+  </div>
+</section>
+
+<header class="top hidden" id="topbar"><div class="in">
+  <div class="who"><b id="tPlaca"></b><small id="tCond"></small></div>
+  <button type="button" id="bSync" class="sync" aria-label="Sincronizar registros" title="Sincronizar">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.3-4.9L4 8M4 4v4h4M4 13a8 8 0 0 0 14.3 4.9L20 16M20 20v-4h-4"/></svg>
+    <span class="badge zero" id="syncBadge">0</span>
+  </button>
+  <button type="button" id="bBack" class="hidden">Inicio</button>
+  <button type="button" id="bOut">Salir</button>
+</div></header>
+
+<section id="vHome" class="wrap hidden">
+  <h2>Menú</h2>
+  <div class="tiles">
+    <button class="tile" type="button" id="tValid">
+      <span class="ic" aria-hidden="true"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2.2"/><path d="M5.8 16c.5-1.5 1.7-2.3 3.2-2.3s2.7.8 3.2 2.3M14.5 10h4M14.5 13.5h3"/></svg></span>
+      <span><b>Validación de pasajeros</b><small>DNI, QR o código de barras</small></span>
+    </button>
+    <button class="tile hidden" type="button" id="tLoad">
+      <span class="ic alt" aria-hidden="true"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg></span>
+      <span><b>Actualizar datos</b><small>Cargar el Excel de OneDrive</small></span>
+    </button>
+  </div>
+</section>
+
+<section id="vValid" class="wrap hidden">
+  <h2>Validación de pasajeros</h2>
+  <div class="row2 f" id="adminBox">
+    <div><label for="sPlaca">Placa</label><select id="sPlaca"></select></div>
+    <div><label for="iFecha">Fecha</label><input type="date" id="iFecha"></div>
+  </div>
+  <div class="f"><label id="lTipo">Tipo de viaje</label>
+    <div class="seg" role="group" aria-labelledby="lTipo">
+      <button type="button" data-tipo="INGRESO" aria-pressed="true">Ingreso</button>
+      <button type="button" data-tipo="SALIDA" aria-pressed="false">Salida</button>
+    </div>
+  </div>
+  <div class="stats" aria-live="polite">
+    <div class="stat"><b id="kCap">0</b><small>Capacidad</small></div>
+    <div class="stat"><b id="kProg">0</b><small>Programados</small></div>
+    <div class="stat"><b id="kSub">0</b><small>Subieron</small></div>
+    <div class="stat free" id="kFreeBox"><b id="kFree">0</b><small>Libres</small></div>
+  </div>
+  <form id="fDni" novalidate>
+    <label for="iDni">DNI del trabajador</label>
+    <div class="dnirow">
+      <input type="tel" id="iDni" class="dni" inputmode="numeric" maxlength="8" placeholder="00000000" autocomplete="off">
+      <button class="btn" type="submit">Validar</button>
+    </div>
+  </form>
+  <div class="scanbtns">
+    <button class="btn ghost" type="button" id="bCam">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M7 12h10"/></svg>
+      <span id="bCamTxt">Escanear QR / barras</span></button>
+  </div>
+  <div id="reader" class="hidden"></div>
+  <div id="result" aria-live="polite"></div>
+  <button class="btn ghost" type="button" id="bManif" style="margin-top:18px">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>
+    Descargar manifiesto</button>
+  <div class="log"><h3 id="logTitle">Registros de hoy</h3><ul id="logList"><li class="empty">Aún no hay validaciones.</li></ul></div>
+</section>
+
+<div id="ask" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="askT">
+  <div class="box">
+    <p class="mt" id="askT">¿Permitir subir?</p>
+    <p id="askName"></p>
+    <p class="prog" id="askProg"></p>
+    <p class="seats" id="askSeats"></p>
+    <div class="row2">
+      <button class="btn no" type="button" id="askNo">No</button>
+      <button class="btn" type="button" id="askYes">Sí, permitir</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+
+<input type="file" id="fileXls" accept=".xlsx,.xls" class="hidden">
+
+<script>
+// ---------- utilidades ----------
+const $ = id => document.getElementById(id);
+const U = v => String(v ?? "").trim().toUpperCase();
+const norm = s => U(s).normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^A-Z0-9]/g,"");
+const padDni = v => { const d = String(v ?? "").replace(/\D/g,""); return d ? d.padStart(8,"0") : ""; };
+const pad2 = n => String(n).padStart(2,"0");
+const iso = d => d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate());
+const hoyISO = () => iso(new Date());
+const addDays = (s,n) => { const d = new Date(s+"T12:00:00"); d.setDate(d.getDate()+n); return iso(d); };
+const fmt = s => s ? s.slice(8,10)+"/"+s.slice(5,7)+"/"+s.slice(0,4) : "";
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const hhmm = s => { const m = String(s).match(/(\d{1,2})[:.h](\d{2})/); return m ? (+m[1])*60 + (+m[2]) : null; };
+
+// Fecha desde Excel: número de serie, texto DD/MM/AAAA o AAAA-MM-DD
+function toISO(v){
+  if(v === "" || v == null) return "";
+  if(typeof v === "number"){ const p = XLSX.SSF.parse_date_code(v); return p ? p.y+"-"+pad2(p.m)+"-"+pad2(p.d) : ""; }
+  if(v instanceof Date) return iso(v);
+  const s = String(v).trim();
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/); if(m) return m[1]+"-"+pad2(m[2])+"-"+pad2(m[3]);
+  m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/); if(m){ const y = m[3].length===2 ? "20"+m[3] : m[3]; return y+"-"+pad2(m[2])+"-"+pad2(m[1]); }
+  return "";
+}
+
+// ---------- datos de prueba (fechas relativas a hoy) ----------
+function demo(){
+  const h = hoyISO(), m = addDays(h,1);
+  const asg = [];
+  [h,m].forEach(f => asg.push(
+    {FECHA:f,DNI:"73011499",APELLIDOS:"HERNANDEZ OBLITAS ANTHONY JESUS",PLACA:"T4H-851",TIPO:"INGRESO",HORARIO:"05:30",RUTA:"HUANCHACO - FUNDO AQU1"},
+    {FECHA:f,DNI:"70263051",APELLIDOS:"LLANOS BECERRA MERLY LISSET",PLACA:"T4H-851",TIPO:"INGRESO",HORARIO:"05:30",RUTA:"HUANCHACO - FUNDO AQU1"},
+    {FECHA:f,DNI:"70657159",APELLIDOS:"AGREDA SANTILLAN ANGEL MARIANO",PLACA:"BDF-302",TIPO:"INGRESO",HORARIO:"05:30",RUTA:"TRUJILLO - FUNDO AQ3"},
+    {FECHA:f,DNI:"77487495",APELLIDOS:"AREDO VARGAS ERICK ANDERSON",PLACA:"T4H-851",TIPO:"SALIDA",HORARIO:"17:30",RUTA:"FUNDO AQU1 - HUANCHACO"},
+    {FECHA:f,DNI:"47508018",APELLIDOS:"VASQUEZ SANTIAGO WALDIR ANDERSON",PLACA:"BDF-302",TIPO:"SALIDA",HORARIO:"17:30",RUTA:"FUNDO AQ3 - TRUJILLO"}));
+  return {
+    origen:"DATOS DE PRUEBA",
+    maestra:[
+      {PLACA:"ADMIN",CLAVE:"admin123",ROL:"ADMINISTRADOR",CONDUCTOR:"ADMINISTRADOR GENERAL",INICIO:"",FIN:""},
+      {PLACA:"T4H-851",CLAVE:"4851",ROL:"CONDUCTOR",CONDUCTOR:"RAMIREZ SALAZAR JOSE LUIS",INICIO:addDays(h,-30),FIN:addDays(h,10)},
+      {PLACA:"T4H-851",CLAVE:"4851",ROL:"CONDUCTOR",CONDUCTOR:"CASTILLO RUIZ PEDRO MANUEL",INICIO:addDays(h,11),FIN:addDays(h,40)},
+      {PLACA:"BDF-302",CLAVE:"7302",ROL:"CONDUCTOR",CONDUCTOR:"GUEVARA PAREDES LUIS ALBERTO",INICIO:addDays(h,-30),FIN:addDays(h,40)}
+    ],
+    capacidades:[
+      {PLACA:"T4H-851",INICIO:addDays(h,-30),FIN:addDays(h,60),CAPACIDAD:30},
+      {PLACA:"BDF-302",INICIO:addDays(h,-30),FIN:addDays(h,60),CAPACIDAD:25}
+    ],
+    asignaciones:asg
+  };
+}
+
+const KEY = "pv_datos_v4";
+let DATA = demo(), USER = null, scanner = null, scanning = false;
+function load(){ try{ const s = localStorage.getItem(KEY); if(s){ const d = JSON.parse(s); if(d && d.maestra && d.asignaciones && d.capacidades) DATA = d; } }catch(e){} }
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(DATA)); }catch(e){} }
+function showSrc(){ $("srcInfo").textContent = "Fuente: " + DATA.origen + " · " + new Set(DATA.maestra.map(x=>x.PLACA)).size + " placas, " + DATA.asignaciones.length + " asignaciones"; }
+
+// ---------- lectura del Excel ----------
+function pick(row, names){ for(const k of Object.keys(row)){ if(names.includes(norm(k))) return row[k]; } return ""; }
+function findSheet(wb, names){ const n = wb.SheetNames.find(s => names.includes(norm(s))); return n ? wb.Sheets[n] : null; }
+function parseWorkbook(wb, fileName){
+  const sm = findSheet(wb,["USUARIOS","MAESTRA","MAESTRAUSUARIOS","MAESTRADEUSUARIOS"]), sa = findSheet(wb,["ASIGNACIONES","ASIGNACION"]), sc = findSheet(wb,["CAPACIDADES","CAPACIDAD","MAESTRACAPACIDADES","MAESTRADECAPACIDADES"]);
+  if(!sm || !sa || !sc) throw new Error("El Excel debe tener las hojas USUARIOS, CAPACIDADES y ASIGNACIONES.");
+  const maestra = XLSX.utils.sheet_to_json(sm,{defval:"",raw:true}).map(r => ({
+    PLACA:U(pick(r,["PLACA","USUARIO"])), CLAVE:String(pick(r,["CONTRASENA","CLAVE","PASSWORD"])).trim(),
+    ROL:U(pick(r,["ROL"]))||"CONDUCTOR", CONDUCTOR:U(pick(r,["CONDUCTOR","NOMBRE","NOMBRES"])),
+    INICIO:toISO(pick(r,["FECHAINICIO","INICIO"])), FIN:toISO(pick(r,["FECHAFIN","FIN"]))
+  })).filter(r => r.PLACA);
+  const asignaciones = XLSX.utils.sheet_to_json(sa,{defval:"",raw:true}).map(r => ({
+    FECHA:toISO(pick(r,["FECHA"])), DNI:padDni(pick(r,["DNI"])), APELLIDOS:U(pick(r,["APELLIDOS","APELLIDOSYNOMBRES","NOMBRES"])),
+    PLACA:U(pick(r,["PLACA"])), TIPO:U(pick(r,["TIPO"])), HORARIO:fmtHor(pick(r,["HORARIO","HORA"])), RUTA:U(pick(r,["RUTA"]))
+  })).filter(r => r.DNI);
+  const capacidades = XLSX.utils.sheet_to_json(sc,{defval:"",raw:true}).map(r => ({
+    PLACA:U(pick(r,["PLACA"])), INICIO:toISO(pick(r,["FECHAINICIO","INICIO"])), FIN:toISO(pick(r,["FECHAFIN","FIN"])), CAPACIDAD:pick(r,["CAPACIDAD","ASIENTOS"])
+  })).filter(r => r.PLACA);
+  if(!maestra.length) throw new Error("La hoja USUARIOS está vacía.");
+  return {origen:U(fileName), maestra, capacidades, asignaciones};
+}
+// Hora guardada como fracción de día en Excel -> HH:MM
+function fmtHor(v){ if(typeof v === "number" && v < 1){ const t = Math.round(v*1440); return pad2(Math.floor(t/60))+":"+pad2(t%60); } return U(v); }
+
+function askExcel(){ $("fileXls").value=""; $("fileXls").click(); }
+$("fileXls").addEventListener("change", async e => {
+  const f = e.target.files[0]; if(!f) return;
+  try{
+    const wb = XLSX.read(await f.arrayBuffer(), {type:"array"});
+    DATA = parseWorkbook(wb, f.name); save(); showSrc(); if(USER){ setupValid(); }
+    alert("Datos actualizados: " + DATA.maestra.length + " usuarios, " + DATA.capacidades.length + " capacidades y " + DATA.asignaciones.length + " asignaciones.");
+  }catch(err){ alert("No se pudo leer el Excel. " + err.message); }
+});
+$("bLoadLogin").onclick = askExcel; $("tLoad").onclick = askExcel;
+
+// ---------- login por placa ----------
+const vigente = (r, f) => (!r.INICIO || r.INICIO <= f) && (!r.FIN || r.FIN >= f);
+$("iUser").addEventListener("input", () => {
+  const rows = DATA.maestra.filter(x => x.PLACA === U($("iUser").value));
+  const r = rows.find(x => vigente(x, hoyISO())) || rows[0];
+  $("roleVal").textContent = r ? r.ROL : "";
+  $("roleHint").textContent = r ? "Rol asignado" : "Se completa al escribir la placa";
+});
+$("fLogin").addEventListener("submit", e => {
+  e.preventDefault(); $("loginErr").textContent = "";
+  const placa = U($("iUser").value), pass = $("iPass").value.trim();
+  const rows = DATA.maestra.filter(x => x.PLACA === placa && x.CLAVE === pass);
+  if(!rows.length){ $("loginErr").textContent = "Placa o contraseña incorrectas."; return; }
+  const r = rows.find(x => vigente(x, hoyISO()));
+  if(!r){ $("loginErr").textContent = "La placa " + placa + " no tiene conductor asignado para hoy (" + fmt(hoyISO()) + "). Revisa las fechas en USUARIOS."; return; }
+  USER = r; $("iPass").value = "";
+  $("tPlaca").textContent = /ADMIN/.test(r.ROL) ? r.ROL : r.PLACA;
+  $("tCond").textContent = r.CONDUCTOR + " · " + r.ROL;
+  $("tLoad").classList.toggle("hidden", !/ADMIN/.test(r.ROL));
+  document.body.classList.add("app"); $("vLogin").classList.add("hidden"); $("topbar").classList.remove("hidden");
+  setupValid(); go("vHome"); updateSync(); syncNow(true);
+});
+$("bOut").onclick = () => { stopCam(); USER = null; $("result").innerHTML = ""; $("ask").classList.add("hidden"); pending = null;
+  document.body.classList.remove("app"); ["vHome","vValid","topbar"].forEach(id=>$(id).classList.add("hidden"));
+  $("vLogin").classList.remove("hidden"); $("iUser").value=""; $("roleVal").textContent=""; $("iUser").focus(); };
+
+function go(v){ stopCam(); ["vHome","vValid"].forEach(id => $(id).classList.toggle("hidden", id !== v)); $("bBack").classList.toggle("hidden", v === "vHome"); window.scrollTo(0,0); }
+$("bBack").onclick = () => go("vHome");
+$("tValid").onclick = async () => {
+  go("vValid"); renderStats(); renderLog();
+  if(await camYaPermitida()){ autoCam = true; startCam(); } else { $("iDni").focus(); }
+};
+
+// ---------- registros (embarques) ----------
+const RKEY = "pv_registros_v3";
+let REG = [];
+function loadReg(){ try{ REG = JSON.parse(localStorage.getItem(RKEY) || "[]"); }catch(e){ REG = []; } }
+function saveReg(){ try{ localStorage.setItem(RKEY, JSON.stringify(REG)); }catch(e){} }
+const ST = { OK:"PROGRAMADO - SUBIÓ", EXTRA:"NO PROGRAMADO - SUBIÓ", INTENTO:"NO PROGRAMADO - INTENTÓ SUBIR" };
+const subio = r => r.ESTADO === ST.OK || r.ESTADO === ST.EXTRA;
+function addReg(dni, nombre, estado, prog){
+  const now = new Date();
+  prog = prog || {};
+  // Si ya tenía un "intentó subir" en esta placa, fecha y tipo, se reemplaza por la nueva decisión
+  { const {f, placa, tipo} = ctx();
+    REG = REG.filter(r => !(r.DNI === dni && r.FECHA === f && r.PLACA === placa && r.TIPO === tipo && r.ESTADO === ST.INTENTO)); }
+  REG.push({FECHA:ctx().f, HORA:pad2(now.getHours())+":"+pad2(now.getMinutes()), PLACA:ctx().placa, CONDUCTOR:USER.CONDUCTOR, TIPO:ctx().tipo, DNI:dni, APELLIDOS:nombre, ESTADO:estado,
+    P_PLACA: prog.PLACA || "SIN PROGRAMACIÓN", P_TIPO: prog.TIPO || "", P_HORARIO: prog.HORARIO || "", P_RUTA: prog.RUTA || ""});
+  REG[REG.length - 1].SINC = false;
+  saveReg(); renderLog(); renderStats(); updateSync(); syncNow(true);
+}
+
+// ---------- placa / fecha / tipo ----------
+const isAdmin = () => USER && /ADMIN|SUPERV/.test(USER.ROL);
+let TIPO = "INGRESO";
+const ctx = () => ({ f: $("iFecha").value || hoyISO(), placa: $("sPlaca").value, tipo: TIPO });
+function setTipo(t){ TIPO = t; document.querySelectorAll(".seg button").forEach(b => b.setAttribute("aria-pressed", b.dataset.tipo === t)); $("result").innerHTML = ""; renderStats(); renderLog(); }
+document.querySelectorAll(".seg button").forEach(b => b.onclick = () => setTipo(b.dataset.tipo));
+function setupValid(){
+  const placas = [...new Set(DATA.maestra.filter(x=>!/ADMIN|SUPERV/.test(x.ROL)).map(x=>x.PLACA).concat(DATA.asignaciones.map(a=>a.PLACA)))].filter(Boolean).sort();
+  $("sPlaca").innerHTML = (isAdmin() ? placas : [USER.PLACA]).map(x=>`<option>${esc(x)}</option>`).join("");
+  $("iFecha").value = hoyISO();
+  $("adminBox").classList.toggle("hidden", !isAdmin());
+  setTipo(new Date().getHours() < 12 ? "INGRESO" : "SALIDA");
+}
+function capacidad(placa, f){
+  const r = (DATA.capacidades || []).find(x => x.PLACA === placa && vigente(x, f));
+  return r ? (parseInt(r.CAPACIDAD,10) || 0) : 0;
+}
+function seats(){
+  const {f, placa, tipo} = ctx();
+  const cap = capacidad(placa, f);
+  const prog = DATA.asignaciones.filter(a => a.FECHA === f && a.PLACA === placa && a.TIPO === tipo).length;
+  const regs = REG.filter(r => r.FECHA === f && r.PLACA === placa && r.TIPO === tipo);
+  const sub = regs.filter(subio).length;
+  const extra = regs.filter(r => r.ESTADO === ST.EXTRA).length;
+  return {cap, prog, sub, free: Math.max(cap - prog - extra, 0)};
+}
+function renderStats(){
+  const s = seats();
+  $("kCap").textContent = s.cap || "—"; $("kProg").textContent = s.prog; $("kSub").textContent = s.sub; $("kFree").textContent = s.cap ? s.free : "—";
+  $("kFreeBox").className = "stat " + (s.cap && s.free === 0 ? "full" : "free");
+}
+$("sPlaca").addEventListener("change", () => { $("result").innerHTML=""; renderStats(); renderLog(); });
+$("iFecha").addEventListener("change", () => { $("result").innerHTML=""; renderStats(); renderLog(); });
+
+// ---------- validación ----------
+$("iDni").addEventListener("input", e => { e.target.value = e.target.value.replace(/\D/g,"").slice(0,8); });
+$("fDni").addEventListener("submit", e => { e.preventDefault(); validate($("iDni").value); });
+let pending = null;
+
+function validate(raw){
+  if(pending) return;
+  const dni = String(raw).replace(/\D/g,"");
+  if(dni.length !== 8){ showResult("warn","DNI incompleto","","","El DNI debe tener 8 dígitos."); $("iDni").focus(); return; }
+  const {f, placa, tipo} = ctx();
+  $("iDni").value = "";
+  const delDia = DATA.asignaciones.filter(a => a.DNI === dni && a.FECHA === f);
+  const nombre = (delDia[0] || DATA.asignaciones.find(a => a.DNI === dni) || {}).APELLIDOS || "";
+
+  // Ya subió en esta fecha y tipo: no se registra de nuevo
+  // Solo cuenta como duplicado si YA SUBIÓ en esta misma placa, fecha y tipo de viaje.
+  // Los "intentó subir" no bloquean: se vuelve a preguntar si sube o no.
+  const ya = REG.find(r => r.DNI === dni && r.FECHA === f && r.PLACA === placa && r.TIPO === tipo && subio(r));
+  if(ya){
+    showResult("warn","Ya registrado", nombre || ya.APELLIDOS, "DNI " + dni,
+      `<p class="rx">Ya subió a las <b>${esc(ya.HORA)}</b> en la placa <b>${esc(ya.PLACA)}</b> (${esc(ya.TIPO)}). No se vuelve a registrar.</p>`, true);
+    buzz(false); $("iDni").focus(); return;
+  }
+
+  const ok = delDia.find(a => a.PLACA === placa && a.TIPO === tipo);
+  if(ok){
+    addReg(dni, nombre, ST.OK, ok);
+    showResult("ok","Trabajador programado", nombre, "DNI " + dni,
+      `<p class="rx"><b>${esc(ok.PLACA)}</b> · ${esc(ok.TIPO)} · ${esc(ok.HORARIO)}</p>${ok.RUTA ? `<p class="rx">${esc(ok.RUTA)}</p>` : ""}`, true);
+    buzz(true); $("iDni").focus(); return;
+  }
+
+  // No programado: mostrar dónde sí va y preguntar
+  const donde = delDia.length
+    ? `<p class="rx">Su programación del ${fmt(f)}:</p><ul>` + delDia.map(a => `<li><b>${esc(a.PLACA)}</b> · ${esc(a.TIPO)} · ${esc(a.HORARIO)}${a.RUTA ? " · " + esc(a.RUTA) : ""}</li>`).join("") + `</ul>`
+    : `<p class="rx">No tiene ninguna programación para el ${fmt(f)}.</p>`;
+  const nm = nombre || "Sin registro en asignaciones";
+  showResult("bad","Trabajador no programado", nm, "DNI " + dni, donde, true);
+  buzz(false);
+  const prog = delDia.find(a => a.TIPO === tipo) || delDia[0] || null;
+  pending = {dni, nombre: nombre || "SIN REGISTRO", nm, donde, prog};
+  const s = seats();
+  $("askName").textContent = nm + " · DNI " + dni;
+  $("askProg").innerHTML = delDia.length
+    ? "Programado en: " + delDia.map(a => `<b>${esc(a.PLACA)}</b> · ${esc(a.TIPO)} · ${esc(a.HORARIO)}`).join("<br>")
+    : "Sin programación para el " + fmt(f) + ".";
+  $("askSeats").textContent = s.cap ? (s.free > 0 ? `Quedan ${s.free} asientos libres de ${s.cap}.` : `Unidad llena: no quedan asientos libres (capacidad ${s.cap}).`) : "Capacidad de la unidad no registrada en CAPACIDADES para esta fecha.";
+  $("askSeats").className = "seats" + (s.cap && s.free <= 0 ? " full" : "");
+  $("ask").classList.remove("hidden"); $("askYes").focus();
+}
+function closeAsk(permit){
+  const p = pending; if(!p) return; pending = null; $("ask").classList.add("hidden");
+  if(permit){
+    addReg(p.dni, p.nombre, ST.EXTRA, p.prog);
+    showResult("warn","Subió sin programación", p.nm, "DNI " + p.dni, `<p class="rx">Registrado como no programado que sí subió.</p>` + p.donde, true);
+  } else {
+    addReg(p.dni, p.nombre, ST.INTENTO, p.prog);
+    showResult("bad","No se permitió subir", p.nm, "DNI " + p.dni, `<p class="rx">Registrado como intento de subir.</p>` + p.donde, true);
+  }
+  if(autoCam){ $("iDni").blur(); resumeCam(); } else { $("iDni").focus(); }
+}
+$("askYes").onclick = () => closeAsk(true);
+$("askNo").onclick = () => closeAsk(false);
+function buzz(good){ if(navigator.vibrate){ try{ navigator.vibrate(good ? 80 : [120,80,120]); }catch(e){} } }
+
+const ICONS = {
+  ok:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+  bad:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  warn:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"><path d="M12 6v8M12 18.5v.5"/></svg>'
+};
+function showResult(kind, title, name, dni, extra, isHtml){
+  $("result").innerHTML = `<div class="result ${kind}"><span class="ri">${ICONS[kind]}</span><div>
+    <p class="rt">${esc(title)}</p>${name ? `<p class="rn">${esc(name)}</p>` : ""}${dni ? `<p class="rd">${esc(dni)}</p>` : ""}
+    ${isHtml ? extra : `<p class="rx">${esc(extra)}</p>`}</div></div>`;
+}
+function renderLog(){
+  if(!USER) return;
+  const {f, placa, tipo} = ctx();
+  $("logTitle").textContent = `Registros · ${placa} · ${tipo} · ${fmt(f)}`;
+  const list = REG.filter(r => r.FECHA === f && r.PLACA === placa && r.TIPO === tipo).slice().reverse();
+  const ul = $("logList");
+  if(!list.length){ ul.innerHTML = '<li class="empty">Aún no hay registros.</li>'; return; }
+  const look = { [ST.OK]:["var(--ok)","Subió"], [ST.EXTRA]:["var(--warn)","Subió sin prog."], [ST.INTENTO]:["var(--bad)","Intentó subir"] };
+  ul.innerHTML = list.map(r => { const [c,t] = look[r.ESTADO] || ["var(--muted)", r.ESTADO];
+    return `<li><span class="dot" style="background:${c}"></span><span class="n">${r.DNI} · ${esc(r.APELLIDOS)}</span><span class="st" style="color:${c}">${t}</span><time>${esc(r.HORA)}</time></li>`; }).join("");
+}
+
+// ---------- exportar registros a Excel ----------
+const XHDR = ["FECHA","DNI","APELLIDOS","PLACA EJECUTADA","TURNO EJECUTADO","HORA EJECUTADA","CONDUCTOR","ESTADO"];
+async function getDownloads(){
+  try{ if(window.claude && typeof window.claude.use === "function") return await window.claude.use("downloads"); }catch(e){}
+  return null;
+}
+// Manifiesto: solo los que SUBIERON, de la placa, fecha y tipo de viaje seleccionados
+$("bManif").onclick = async () => {
+  const {f, placa, tipo} = ctx();
+  const list = REG.filter(r => r.FECHA === f && r.PLACA === placa && r.TIPO === tipo && subio(r));
+  if(!list.length){ toast("No hay pasajeros que hayan subido en " + placa + " · " + tipo + " · " + fmt(f) + "."); return; }
+  const rows = list.map(r => {
+    const [y,m,d] = r.FECHA.split("-").map(Number);
+    return [(Date.UTC(y, m-1, d) - Date.UTC(1899, 11, 30)) / 86400000, r.DNI, r.APELLIDOS, r.PLACA, r.TIPO, r.HORA, r.CONDUCTOR, r.ESTADO];
+  });
+  const ws = XLSX.utils.aoa_to_sheet([XHDR, ...rows]);
+  for(let i = 2; i <= rows.length + 1; i++){ const c = ws["A"+i]; if(c){ c.t = "n"; c.z = "dd/mm/yyyy"; } }
+  ws["!cols"] = [12,11,38,15,15,14,32,30].map(w => ({wch:w}));
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "MANIFIESTO");
+  const name = "MANIFIESTO_" + placa + "_" + tipo + "_" + f + ".xlsx";
+  const buf = XLSX.write(wb, {type:"array", bookType:"xlsx"});
+  const dl = await getDownloads();
+  if(dl){
+    try{ await dl.save({filename:name, data:new Blob([buf])}); }
+    catch(err){ if(err && err.code !== "declined") toast("No se pudo descargar el manifiesto en esta vista."); }
+  } else {
+    XLSX.writeFile(wb, name);
+  }
+};
+
+// ---------- sincronización con OneDrive ----------
+// Pega aquí la URL del flujo de Power Automate (o del servicio puente) que escribe en REGISTROS_EMBARQUE.xlsx.
+// Mientras esté vacía, los registros quedan guardados en el equipo como PENDIENTES.
+const SYNC_URL = "";
+let syncing = false;
+const pendientes = () => REG.filter(r => !r.SINC && (isAdmin() || !USER || r.PLACA === USER.PLACA));
+function updateSync(){
+  const n = pendientes().length, b = $("syncBadge");
+  b.textContent = n; b.className = "badge" + (n ? "" : " zero");
+  $("bSync").title = n ? n + " registros por sincronizar" : "Todo sincronizado";
+}
+let toastT = null;
+function toast(msg){ const t = $("toast"); t.textContent = msg; t.classList.remove("hidden"); clearTimeout(toastT); toastT = setTimeout(() => t.classList.add("hidden"), 3500); }
+function toRow(r){
+  return {FECHA:fmt(r.FECHA), DNI:r.DNI, APELLIDOS:r.APELLIDOS, PLACA_PROGRAMADA:r.P_PLACA || "", TURNO_PROGRAMADO:r.P_TIPO || "", HORARIO_PROGRAMADO:r.P_HORARIO || "", RUTA_PROGRAMADA:r.P_RUTA || "",
+    PLACA_EJECUTADA:r.PLACA, TURNO_EJECUTADO:r.TIPO, HORA_EJECUTADA:r.HORA, CONDUCTOR:r.CONDUCTOR, ESTADO:r.ESTADO, COINCIDE_PLACA:(r.P_PLACA && r.P_PLACA === r.PLACA) ? "SI" : "NO"};
+}
+async function syncNow(silent){
+  if(syncing || !USER) return;
+  const list = pendientes();
+  if(!list.length){ if(!silent) toast("Todo sincronizado. No hay registros pendientes."); return; }
+  if(!SYNC_URL){ if(!silent) toast(list.length + " registros guardados en este equipo. Falta conectar OneDrive para enviarlos; mientras tanto descarga el manifiesto."); return; }
+  if(!navigator.onLine){ if(!silent) toast("Sin internet. " + list.length + " registros quedan pendientes y se enviarán al volver la señal."); return; }
+  syncing = true; $("bSync").classList.add("spin");
+  try{
+    const res = await fetch(SYNC_URL, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({placa:USER.PLACA, registros:list.map(toRow)})});
+    if(!res.ok) throw new Error("HTTP " + res.status);
+    list.forEach(r => r.SINC = true); saveReg();
+    if(!silent) toast(list.length + " registros sincronizados con OneDrive.");
+  }catch(err){
+    if(!silent) toast("No se pudo sincronizar (" + err.message + "). Los registros siguen guardados; intenta de nuevo.");
+  }finally{
+    syncing = false; $("bSync").classList.remove("spin"); updateSync();
+  }
+}
+$("bSync").onclick = () => syncNow(false);
+window.addEventListener("online", () => syncNow(true));
+
+// ---------- escaneo QR / código de barras ----------
+function dniFromCode(text){ const t = String(text||""); const m = t.match(/(?<!\d)\d{8}(?!\d)/) || t.match(/\d{8}/); return m ? m[0] : ""; }
+function makeScanner(){
+  if(typeof Html5Qrcode === "undefined") throw new Error("El lector no cargó.");
+  const F = Html5QrcodeSupportedFormats;
+  return new Html5Qrcode("reader", {verbose:false, formatsToSupport:[F.QR_CODE,F.PDF_417,F.CODE_128,F.CODE_39,F.EAN_13]});
+}
+function onCode(text){
+  const dni = dniFromCode(text); stopCam();
+  if(!dni){ showResult("warn","Código sin DNI","","","Se leyó el código, pero no tiene un DNI de 8 dígitos. Escríbelo a mano."); resumeCam(); return; }
+  validate(dni);
+  $("iDni").blur();
+  resumeCam();
+}
+async function startCam(){
+  try{
+    $("reader").classList.remove("hidden"); scanner = scanner || makeScanner();
+    await scanner.start({facingMode:"environment"}, {fps:10, qrbox:(w,h)=>({width:Math.min(300,w*0.85), height:Math.min(180,h*0.6)})}, onCode, ()=>{});
+    scanning = true; autoCam = true; $("bCamTxt").textContent = "Detener cámara";
+    try{ localStorage.setItem("pv_cam_ok", "1"); }catch(e){}
+    $("iDni").blur();
+  }catch(err){
+    $("reader").classList.add("hidden");
+    showResult("warn","Cámara no disponible","","", (!window.isSecureContext || !navigator.mediaDevices)
+      ? "La app está abierta como archivo. La cámara solo funciona abriendo la app desde su link https. Mientras tanto, escribe el número."
+      : "No se pudo abrir la cámara. Revisa el permiso de cámara o escribe el número.");
+  }
+}
+function stopCam(){ if(scanner && scanning){ scanner.stop().catch(()=>{}); } scanning = false; $("bCamTxt").textContent = "Escanear QR / barras"; $("reader").classList.add("hidden"); }
+$("bCam").onclick = () => { if(scanning){ autoCam = false; stopCam(); } else { startCam(); } };
+
+// Cámara directa: si ya se dio permiso antes, se abre sola al entrar y se reabre después de cada validación
+let autoCam = false;
+async function camYaPermitida(){
+  try{ if(navigator.permissions){ const p = await navigator.permissions.query({name:"camera"}); if(p.state === "granted") return true; if(p.state === "denied") return false; } }catch(e){}
+  try{ return localStorage.getItem("pv_cam_ok") === "1"; }catch(e){ return false; }
+}
+function enValidacion(){ return !$("vValid").classList.contains("hidden"); }
+function resumeCam(){
+  if(!autoCam) return;
+  setTimeout(() => { if(autoCam && !pending && !scanning && enValidacion()) startCam(); }, 1500);
+}
+
+load(); loadReg(); showSrc(); $("iUser").focus();
+</script>
+</body>
+</html>
