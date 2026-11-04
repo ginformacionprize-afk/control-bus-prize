@@ -13,9 +13,12 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@600;800&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<!-- Lector QR: se descarga en paralelo sin bloquear la pantalla. La librería de Excel se carga solo al descargar el manifiesto. -->
+<script defer src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <style>
 :root{
   --bg:#E9EFEE; --surface:#FFFFFF; --ink:#13262A; --muted:#5A6E70; --line:#CCD8D6;
@@ -506,6 +509,17 @@ function renderLog(){
 }
 
 // ---------- exportar registros a Excel ----------
+// La librería de Excel (~300 KB) se pide solo cuando hace falta; se precarga después del inicio para tenerla sin señal.
+const XLSX_URL = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+let xlsxP = null;
+function loadXlsx(){
+  if(window.XLSX) return Promise.resolve();
+  return xlsxP ??= new Promise((ok, ko) => {
+    const s = document.createElement("script"); s.src = XLSX_URL; s.async = true;
+    s.onload = ok; s.onerror = () => { xlsxP = null; s.remove(); ko(new Error("sin conexión")); };
+    document.head.appendChild(s);
+  });
+}
 const XHDR = ["FECHA","DNI","APELLIDOS","PLACA EJECUTADA","TURNO EJECUTADO","HORA EJECUTADA","CONDUCTOR","ESTADO"];
 async function getDownloads(){
   try{ if(window.claude && typeof window.claude.use === "function") return await window.claude.use("downloads"); }catch(e){}
@@ -516,6 +530,7 @@ $("bManif").onclick = async () => {
   const {f, placa, tipo} = ctx();
   const list = REG.filter(r => r.FECHA === f && r.PLACA === placa && r.TIPO === tipo && subio(r));
   if(!list.length){ toast("No hay pasajeros que hayan subido en " + placa + " · " + tipo + " · " + fmt(f) + "."); return; }
+  try{ await loadXlsx(); }catch(e){ toast("No se pudo preparar el manifiesto (sin conexión). Intenta de nuevo con señal."); return; }
   const rows = list.map(r => {
     const [y,m,d] = r.FECHA.split("-").map(Number);
     return [(Date.UTC(y, m-1, d) - Date.UTC(1899, 11, 30)) / 86400000, r.DNI, r.APELLIDOS, r.PLACA, r.TIPO, r.HORA, r.CONDUCTOR, r.ESTADO];
@@ -575,6 +590,10 @@ window.addEventListener("online", () => syncNow(true));
 
 // ---------- escaneo QR / código de barras ----------
 function dniFromCode(text){ const t = String(text||""); const m = t.match(/(?<!\d)\d{8}(?!\d)/) || t.match(/\d{8}/); return m ? m[0] : ""; }
+// El lector se carga con "defer": si se pide la cámara antes de que termine, se espera hasta 10 s
+function waitQr(){
+  return new Promise(ok => { const t0 = Date.now(); (function w(){ if(typeof Html5Qrcode !== "undefined" || Date.now() - t0 > 10000) ok(); else setTimeout(w, 100); })(); });
+}
 function makeScanner(){
   if(typeof Html5Qrcode === "undefined") throw new Error("El lector no cargó.");
   const F = Html5QrcodeSupportedFormats;
@@ -591,7 +610,7 @@ function onCode(text, result){
 }
 async function startCam(){
   try{
-    $("reader").classList.remove("hidden"); scanner = scanner || makeScanner();
+    $("reader").classList.remove("hidden"); await waitQr(); scanner = scanner || makeScanner();
     await scanner.start({facingMode:"environment"}, {fps:10, qrbox:(w,h)=>({width:Math.min(300,w*0.85), height:Math.min(180,h*0.6)})}, onCode, ()=>{});
     scanning = true; autoCam = true; $("bCamTxt").textContent = "Detener cámara";
     try{ localStorage.setItem("pv_cam_ok", "1"); }catch(e){}
@@ -619,6 +638,8 @@ function resumeCam(){
 }
 
 load(); loadReg(); showSrc(); $("iUser").focus();
+// Precarga la librería de Excel cuando la app ya está lista, para que el manifiesto funcione luego sin señal
+window.addEventListener("load", () => setTimeout(() => loadXlsx().catch(()=>{}), 3000));
 
 // ---------- PWA: instalación y actualización automática ----------
 let installEvt = null;
