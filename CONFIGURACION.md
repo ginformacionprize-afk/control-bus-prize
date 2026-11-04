@@ -26,7 +26,7 @@ Entrar a **Proyecto → Settings → Environment Variables** y agregar:
 | `TENANT_ID` | Id. de directorio (inquilino) |
 | `CLIENT_ID` | Id. de aplicación (cliente) |
 | `CLIENT_SECRET` | Valor del secreto |
-| `DRIVE_USER` | correo del dueño del OneDrive, ej. `jcontreras@aquanqa.com` |
+| `DRIVE_USER` | correo del dueño del OneDrive, ej. `jcontreras@aquanqa.pe` (debe ser la cuenta real de Microsoft 365; si no, Graph responde "User not found") |
 | `BASE_PATH` | `Gi Cosecha y Operaciones/App_Sheet/Registros Control_Bus` |
 | `BASE_FILE` | `BASE_MAESTRA_ASIGNACIONES.xlsx` |
 | `REG_FILE` | `REGISTROS_EMBARQUE.xlsx` |
