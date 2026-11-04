@@ -161,8 +161,7 @@ h2{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-weight:800;font
   </form>
   <div class="foot">
     <button class="btn" type="button" id="bInstall" style="margin-bottom:14px" hidden>Instalar app en el celular</button>
-    <span id="srcInfo"></span><br>
-    <button class="link" type="button" id="bLoadLogin">Cargar Excel (USUARIOS, CAPACIDADES y ASIGNACIONES)</button>
+    <span id="srcInfo"></span>
   </div>
 </section>
 
@@ -182,10 +181,6 @@ h2{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-weight:800;font
     <button class="tile" type="button" id="tValid">
       <span class="ic" aria-hidden="true"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2.2"/><path d="M5.8 16c.5-1.5 1.7-2.3 3.2-2.3s2.7.8 3.2 2.3M14.5 10h4M14.5 13.5h3"/></svg></span>
       <span><b>Validación de pasajeros</b><small>DNI, QR o código de barras</small></span>
-    </button>
-    <button class="tile hidden" type="button" id="tLoad">
-      <span class="ic alt" aria-hidden="true"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg></span>
-      <span><b>Actualizar datos</b><small>Cargar el Excel de OneDrive</small></span>
     </button>
   </div>
 </section>
@@ -244,8 +239,6 @@ h2{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-weight:800;font
 <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 <div id="updBar" class="toast hidden" role="status" style="bottom:calc(70px + env(safe-area-inset-bottom,0px))">Actualizando la app a la última versión…</div>
 
-<input type="file" id="fileXls" accept=".xlsx,.xls" class="hidden">
-
 <script>
 // ---------- utilidades ----------
 const $ = id => document.getElementById(id);
@@ -259,17 +252,6 @@ const addDays = (s,n) => { const d = new Date(s+"T12:00:00"); d.setDate(d.getDat
 const fmt = s => s ? s.slice(8,10)+"/"+s.slice(5,7)+"/"+s.slice(0,4) : "";
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const hhmm = s => { const m = String(s).match(/(\d{1,2})[:.h](\d{2})/); return m ? (+m[1])*60 + (+m[2]) : null; };
-
-// Fecha desde Excel: número de serie, texto DD/MM/AAAA o AAAA-MM-DD
-function toISO(v){
-  if(v === "" || v == null) return "";
-  if(typeof v === "number"){ const p = XLSX.SSF.parse_date_code(v); return p ? p.y+"-"+pad2(p.m)+"-"+pad2(p.d) : ""; }
-  if(v instanceof Date) return iso(v);
-  const s = String(v).trim();
-  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/); if(m) return m[1]+"-"+pad2(m[2])+"-"+pad2(m[3]);
-  m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/); if(m){ const y = m[3].length===2 ? "20"+m[3] : m[3]; return y+"-"+pad2(m[2])+"-"+pad2(m[1]); }
-  return "";
-}
 
 // ---------- datos de prueba (fechas relativas a hoy) ----------
 function demo(){
@@ -302,41 +284,6 @@ let DATA = demo(), USER = null, scanner = null, scanning = false;
 function load(){ try{ const s = localStorage.getItem(KEY); if(s){ const d = JSON.parse(s); if(d && d.maestra && d.asignaciones && d.capacidades) DATA = d; } }catch(e){} }
 function save(){ try{ localStorage.setItem(KEY, JSON.stringify(DATA)); }catch(e){} }
 function showSrc(){ $("srcInfo").textContent = "Fuente: " + DATA.origen + " · " + new Set(DATA.maestra.map(x=>x.PLACA)).size + " placas, " + DATA.asignaciones.length + " asignaciones"; }
-
-// ---------- lectura del Excel ----------
-function pick(row, names){ for(const k of Object.keys(row)){ if(names.includes(norm(k))) return row[k]; } return ""; }
-function findSheet(wb, names){ const n = wb.SheetNames.find(s => names.includes(norm(s))); return n ? wb.Sheets[n] : null; }
-function parseWorkbook(wb, fileName){
-  const sm = findSheet(wb,["USUARIOS","MAESTRA","MAESTRAUSUARIOS","MAESTRADEUSUARIOS"]), sa = findSheet(wb,["ASIGNACIONES","ASIGNACION"]), sc = findSheet(wb,["CAPACIDADES","CAPACIDAD","MAESTRACAPACIDADES","MAESTRADECAPACIDADES"]);
-  if(!sm || !sa || !sc) throw new Error("El Excel debe tener las hojas USUARIOS, CAPACIDADES y ASIGNACIONES.");
-  const maestra = XLSX.utils.sheet_to_json(sm,{defval:"",raw:true}).map(r => ({
-    PLACA:U(pick(r,["PLACA","USUARIO"])), CLAVE:String(pick(r,["CONTRASENA","CLAVE","PASSWORD"])).trim(),
-    ROL:U(pick(r,["ROL"]))||"CONDUCTOR", CONDUCTOR:U(pick(r,["CONDUCTOR","NOMBRE","NOMBRES"])),
-    INICIO:toISO(pick(r,["FECHAINICIO","INICIO"])), FIN:toISO(pick(r,["FECHAFIN","FIN"]))
-  })).filter(r => r.PLACA);
-  const asignaciones = XLSX.utils.sheet_to_json(sa,{defval:"",raw:true}).map(r => ({
-    FECHA:toISO(pick(r,["FECHA"])), DNI:padDni(pick(r,["DNI"])), APELLIDOS:U(pick(r,["APELLIDOS","APELLIDOSYNOMBRES","NOMBRES"])),
-    PLACA:U(pick(r,["PLACA"])), TIPO:U(pick(r,["TIPO"])), HORARIO:fmtHor(pick(r,["HORARIO","HORA"])), RUTA:U(pick(r,["RUTA"]))
-  })).filter(r => r.DNI);
-  const capacidades = XLSX.utils.sheet_to_json(sc,{defval:"",raw:true}).map(r => ({
-    PLACA:U(pick(r,["PLACA"])), INICIO:toISO(pick(r,["FECHAINICIO","INICIO"])), FIN:toISO(pick(r,["FECHAFIN","FIN"])), CAPACIDAD:pick(r,["CAPACIDAD","ASIENTOS"])
-  })).filter(r => r.PLACA);
-  if(!maestra.length) throw new Error("La hoja USUARIOS está vacía.");
-  return {origen:U(fileName), maestra, capacidades, asignaciones};
-}
-// Hora guardada como fracción de día en Excel -> HH:MM
-function fmtHor(v){ if(typeof v === "number" && v < 1){ const t = Math.round(v*1440); return pad2(Math.floor(t/60))+":"+pad2(t%60); } return U(v); }
-
-function askExcel(){ $("fileXls").value=""; $("fileXls").click(); }
-$("fileXls").addEventListener("change", async e => {
-  const f = e.target.files[0]; if(!f) return;
-  try{
-    const wb = XLSX.read(await f.arrayBuffer(), {type:"array"});
-    DATA = parseWorkbook(wb, f.name); save(); showSrc(); if(USER){ setupValid(); }
-    alert("Datos actualizados: " + DATA.maestra.length + " usuarios, " + DATA.capacidades.length + " capacidades y " + DATA.asignaciones.length + " asignaciones.");
-  }catch(err){ alert("No se pudo leer el Excel. " + err.message); }
-});
-$("bLoadLogin").onclick = askExcel; $("tLoad").onclick = askExcel;
 
 // ---------- servidor ----------
 const API = "/api";
@@ -414,7 +361,6 @@ function entrar(r){
   USER = r; $("iPass").value = "";
   $("tPlaca").textContent = /ADMIN/.test(r.ROL) ? r.ROL : r.PLACA;
   $("tCond").textContent = r.CONDUCTOR + " · " + r.ROL;
-  $("tLoad").classList.toggle("hidden", !/ADMIN/.test(r.ROL));
   document.body.classList.add("app"); $("vLogin").classList.add("hidden"); $("topbar").classList.remove("hidden");
   setupValid(); go("vHome"); updateSync(); syncNow(true);
 }

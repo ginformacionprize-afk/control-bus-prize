@@ -1,7 +1,7 @@
 // Control Bus Prize - service worker
 // La página y los datos se piden SIEMPRE primero a internet (así cada publicación nueva llega sola).
 // Si no hay señal, se usa la última copia guardada para que la app siga funcionando.
-const CACHE = "controlbus-v2";
+const CACHE = "controlbus-v3";
 const CORE = ["./", "./index.html", "./manifest.webmanifest", "./icons/icon-192.png", "./icons/icon-512.png"];
 
 self.addEventListener("install", e => {
