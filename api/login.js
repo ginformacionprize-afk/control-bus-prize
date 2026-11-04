@@ -11,6 +11,8 @@ module.exports = async (req, res) => {
       const placa = U(req.query.placa);
       const rows = usuarios.filter(x => x.PLACA === placa);
       const r = rows.find(x => vigente(x, hoy)) || rows[0];
+      // El rol por placa no es sensible: el CDN de Vercel lo guarda 15 s para no saturar OneDrive
+      res.setHeader("Cache-Control", "public, max-age=0, s-maxage=15, stale-while-revalidate=60");
       return res.json({ rol: r ? r.ROL : "" });
     }
     if (req.method !== "POST") return res.status(405).json({ error: "Método no permitido" });

@@ -39,7 +39,7 @@ Después: **Deployments → … → Redeploy**.
 > - Ajustar `BASE_PATH` a la ruta dentro de esa biblioteca.
 
 ## 3. Probar
-- Abrir `https://TU-APP.vercel.app/api/login?placa=T4H-851`. Debe responder `{"rol":"CONDUCTOR"}`.
+- Abrir `https://TU-APP.vercel.app/api/login?placa=PLACA` con una placa real de USUARIOS. Debe responder su rol, ej. `{"rol":"CONDUCTOR"}`.
 - Si sale un error, el mensaje dice qué falta: permisos, ruta o nombre de tabla.
 
 ## Reglas del Excel
