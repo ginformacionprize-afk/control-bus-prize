@@ -1,0 +1,5 @@
+{
+  "name": "control-bus-prize",
+  "private": true,
+  "engines": { "node": ">=18" }
+}

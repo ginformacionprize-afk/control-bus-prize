@@ -1,7 +1,7 @@
 // Control Bus Prize - service worker
 // La página y los datos se piden SIEMPRE primero a internet (así cada publicación nueva llega sola).
 // Si no hay señal, se usa la última copia guardada para que la app siga funcionando.
-const CACHE = "controlbus-v1";
+const CACHE = "controlbus-v2";
 const CORE = ["./", "./index.html", "./manifest.webmanifest", "./icons/icon-192.png", "./icons/icon-512.png"];
 
 self.addEventListener("install", e => {
@@ -38,6 +38,7 @@ self.addEventListener("fetch", e => {
   if(req.method !== "GET") return;
   const url = new URL(req.url);
   const same = url.origin === self.location.origin;
+  if(same && url.pathname.startsWith("/api/")) return; // el servidor siempre en vivo, nunca desde caché
   if(same && (req.mode === "navigate" || url.pathname.endsWith(".html") || url.pathname.startsWith("/datos/") || url.pathname.endsWith(".webmanifest"))){
     e.respondWith(networkFirst(req)); return;
   }

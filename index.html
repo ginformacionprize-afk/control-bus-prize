@@ -338,29 +338,87 @@ $("fileXls").addEventListener("change", async e => {
 });
 $("bLoadLogin").onclick = askExcel; $("tLoad").onclick = askExcel;
 
+// ---------- servidor ----------
+const API = "/api";
+const canApi = () => location.protocol === "https:" && window.top === window.self;
+const apiOn = () => { try{ return canApi() && localStorage.getItem("pv_api_on") === "1"; }catch(e){ return false; } };
+let SESSION = null;
+try{ SESSION = JSON.parse(localStorage.getItem("pv_sesion") || "null"); }catch(e){ SESSION = null; }
+async function api(path, opt){
+  opt = opt || {};
+  const headers = Object.assign({}, opt.headers || {});
+  if(SESSION && SESSION.token) headers.Authorization = "Bearer " + SESSION.token;
+  if(opt.body) headers["Content-Type"] = "application/json";
+  const r = await fetch(API + path, Object.assign({}, opt, {headers, cache:"no-store"}));
+  let data = null; try{ data = await r.json(); }catch(e){}
+  return {status:r.status, ok:r.ok, data};
+}
+async function sha(t){
+  const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(t));
+  return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2,"0")).join("");
+}
+function offUser(placa){ try{ return JSON.parse(localStorage.getItem("pv_off_" + placa) || "null"); }catch(e){ return null; } }
+
 // ---------- login por placa ----------
 const vigente = (r, f) => (!r.INICIO || r.INICIO <= f) && (!r.FIN || r.FIN >= f);
+function showRol(rol){ $("roleVal").textContent = rol || ""; $("roleHint").textContent = rol ? "Rol asignado" : "Se completa al escribir la placa"; }
+let rolT = null;
 $("iUser").addEventListener("input", () => {
-  const rows = DATA.maestra.filter(x => x.PLACA === U($("iUser").value));
+  const placa = U($("iUser").value);
+  if(apiOn()){
+    clearTimeout(rolT);
+    rolT = setTimeout(async () => {
+      try{ const r = await api("/login?placa=" + encodeURIComponent(placa)); if(U($("iUser").value) === placa) showRol(r.ok && r.data ? r.data.rol : ""); }
+      catch(e){ const off = offUser(placa); showRol(off ? off.user.ROL : ""); }
+    }, 350);
+    return;
+  }
+  const rows = DATA.maestra.filter(x => x.PLACA === placa);
   const r = rows.find(x => vigente(x, hoyISO())) || rows[0];
-  $("roleVal").textContent = r ? r.ROL : "";
-  $("roleHint").textContent = r ? "Rol asignado" : "Se completa al escribir la placa";
+  showRol(r ? r.ROL : "");
 });
-$("fLogin").addEventListener("submit", e => {
+$("fLogin").addEventListener("submit", async e => {
   e.preventDefault(); $("loginErr").textContent = "";
   const placa = U($("iUser").value), pass = $("iPass").value.trim();
+  if(!placa || !pass){ $("loginErr").textContent = "Escribe la placa y la contraseña."; return; }
+
+  // 1) Con servidor (OneDrive): valida en línea
+  if(canApi()){
+    let r = null;
+    try{ r = await api("/login", {method:"POST", body:JSON.stringify({placa, clave:pass})}); }catch(err){ r = null; }
+    if(r && r.status !== 404 && r.data){
+      try{ localStorage.setItem("pv_api_on","1"); }catch(e){}
+      if(!r.ok){ $("loginErr").textContent = r.data.error || "No se pudo ingresar."; return; }
+      SESSION = {token:r.data.token}; try{ localStorage.setItem("pv_sesion", JSON.stringify(SESSION)); }catch(e){}
+      try{ localStorage.setItem("pv_off_" + placa, JSON.stringify({h: await sha(placa + "|" + pass), user:r.data.user, dia:hoyISO()})); }catch(e){}
+      await loadApiData(true);
+      return entrar(r.data.user);
+    }
+    // 2) Sin señal: usa el último ingreso correcto en este celular
+    if(apiOn()){
+      const off = offUser(placa);
+      if(off && off.dia === hoyISO() && off.h === await sha(placa + "|" + pass)){ toast("Sin señal: ingresaste con tu último acceso. Se sincroniza al volver la señal."); return entrar(off.user); }
+      $("loginErr").textContent = r ? "No se pudo conectar con el servidor. Intenta de nuevo." : "Sin señal. Ingresa una vez con internet para poder usar la app sin señal hoy.";
+      return;
+    }
+  }
+
+  // 3) Modo local (pruebas o Excel cargado a mano)
   const rows = DATA.maestra.filter(x => x.PLACA === placa && x.CLAVE === pass);
   if(!rows.length){ $("loginErr").textContent = "Placa o contraseña incorrectas."; return; }
   const r = rows.find(x => vigente(x, hoyISO()));
   if(!r){ $("loginErr").textContent = "La placa " + placa + " no tiene conductor asignado para hoy (" + fmt(hoyISO()) + "). Revisa las fechas en USUARIOS."; return; }
+  entrar(r);
+});
+function entrar(r){
   USER = r; $("iPass").value = "";
   $("tPlaca").textContent = /ADMIN/.test(r.ROL) ? r.ROL : r.PLACA;
   $("tCond").textContent = r.CONDUCTOR + " · " + r.ROL;
   $("tLoad").classList.toggle("hidden", !/ADMIN/.test(r.ROL));
   document.body.classList.add("app"); $("vLogin").classList.add("hidden"); $("topbar").classList.remove("hidden");
   setupValid(); go("vHome"); updateSync(); syncNow(true);
-});
-$("bOut").onclick = () => { stopCam(); USER = null; $("result").innerHTML = ""; $("ask").classList.add("hidden"); pending = null;
+}
+$("bOut").onclick = () => { stopCam(); USER = null; SESSION = null; try{ localStorage.removeItem("pv_sesion"); }catch(e){} $("result").innerHTML = ""; $("ask").classList.add("hidden"); pending = null;
   document.body.classList.remove("app"); ["vHome","vValid","topbar"].forEach(id=>$(id).classList.add("hidden"));
   $("vLogin").classList.remove("hidden"); $("iUser").value=""; $("roleVal").textContent=""; $("iUser").focus(); };
 
@@ -372,20 +430,24 @@ $("tValid").onclick = async () => {
 };
 
 // ---------- registros (embarques) ----------
-const RKEY = "pv_registros_v3";
+const RKEY = "pv_registros_v4";
 let REG = [];
-function loadReg(){ try{ REG = JSON.parse(localStorage.getItem(RKEY) || "[]"); }catch(e){ REG = []; } }
+const newId = (dni, f, placa, tipo) => dni + "-" + f.replace(/-/g,"") + "-" + placa + "-" + tipo.charAt(0) + "-" + Date.now().toString(36) + Math.random().toString(36).slice(2,5);
+function loadReg(){ try{ REG = JSON.parse(localStorage.getItem(RKEY) || "[]"); }catch(e){ REG = []; } REG.forEach(r => { if(!r.ID) r.ID = newId(r.DNI, r.FECHA, r.PLACA, r.TIPO); }); }
 function saveReg(){ try{ localStorage.setItem(RKEY, JSON.stringify(REG)); }catch(e){} }
 const ST = { OK:"PROGRAMADO - SUBIÓ", EXTRA:"NO PROGRAMADO - SUBIÓ", INTENTO:"NO PROGRAMADO - INTENTÓ SUBIR" };
 const subio = r => r.ESTADO === ST.OK || r.ESTADO === ST.EXTRA;
-function addReg(dni, nombre, estado, prog){
+function addReg(dni, nombre, estado, prog, metodo){
   const now = new Date();
   prog = prog || {};
   // Si ya tenía un "intentó subir" en esta placa, fecha y tipo, se reemplaza por la nueva decisión
   { const {f, placa, tipo} = ctx();
-    REG = REG.filter(r => !(r.DNI === dni && r.FECHA === f && r.PLACA === placa && r.TIPO === tipo && r.ESTADO === ST.INTENTO)); }
+    const prev = r => r.DNI === dni && r.FECHA === f && r.PLACA === placa && r.TIPO === tipo && r.ESTADO === ST.INTENTO;
+    var reemplaza = REG.filter(prev).flatMap(r => r.SINC ? [r.ID] : (r.REEMPLAZA || []));
+    REG = REG.filter(r => !prev(r)); }
   REG.push({FECHA:ctx().f, HORA:pad2(now.getHours())+":"+pad2(now.getMinutes()), PLACA:ctx().placa, CONDUCTOR:USER.CONDUCTOR, TIPO:ctx().tipo, DNI:dni, APELLIDOS:nombre, ESTADO:estado,
-    P_PLACA: prog.PLACA || "SIN PROGRAMACIÓN", P_TIPO: prog.TIPO || "", P_HORARIO: prog.HORARIO || "", P_RUTA: prog.RUTA || ""});
+    P_PLACA: prog.PLACA || "SIN PROGRAMACIÓN", P_TIPO: prog.TIPO || "", P_HORARIO: prog.HORARIO || "", P_RUTA: prog.RUTA || "",
+    ID: newId(dni, ctx().f, ctx().placa, ctx().tipo), REEMPLAZA: reemplaza, LECTURA: metodo || "DIGITADO"});
   REG[REG.length - 1].SINC = false;
   saveReg(); renderLog(); renderStats(); updateSync(); syncNow(true);
 }
@@ -410,7 +472,8 @@ function capacidad(placa, f){
 function seats(){
   const {f, placa, tipo} = ctx();
   const cap = capacidad(placa, f);
-  const prog = DATA.asignaciones.filter(a => a.FECHA === f && a.PLACA === placa && a.TIPO === tipo).length;
+  // Cuenta personas distintas (si el Excel repite una fila, no se cuenta dos veces)
+  const prog = new Set(DATA.asignaciones.filter(a => a.FECHA === f && a.PLACA === placa && a.TIPO === tipo).map(a => a.DNI)).size;
   const regs = REG.filter(r => r.FECHA === f && r.PLACA === placa && r.TIPO === tipo);
   const sub = regs.filter(subio).length;
   const extra = regs.filter(r => r.ESTADO === ST.EXTRA).length;
@@ -426,10 +489,11 @@ $("iFecha").addEventListener("change", () => { $("result").innerHTML=""; renderS
 
 // ---------- validación ----------
 $("iDni").addEventListener("input", e => { e.target.value = e.target.value.replace(/\D/g,"").slice(0,8); });
-$("fDni").addEventListener("submit", e => { e.preventDefault(); validate($("iDni").value); });
+$("fDni").addEventListener("submit", e => { e.preventDefault(); validate($("iDni").value, "DIGITADO"); });
 let pending = null;
 
-function validate(raw){
+function validate(raw, metodo){
+  metodo = metodo || "DIGITADO";
   if(pending) return;
   const dni = String(raw).replace(/\D/g,"");
   if(dni.length !== 8){ showResult("warn","DNI incompleto","","","El DNI debe tener 8 dígitos."); $("iDni").focus(); return; }
@@ -450,7 +514,7 @@ function validate(raw){
 
   const ok = delDia.find(a => a.PLACA === placa && a.TIPO === tipo);
   if(ok){
-    addReg(dni, nombre, ST.OK, ok);
+    addReg(dni, nombre, ST.OK, ok, metodo);
     showResult("ok","Trabajador programado", nombre, "DNI " + dni,
       `<p class="rx"><b>${esc(ok.PLACA)}</b> · ${esc(ok.TIPO)} · ${esc(ok.HORARIO)}</p>${ok.RUTA ? `<p class="rx">${esc(ok.RUTA)}</p>` : ""}`, true);
     buzz(true); $("iDni").focus(); return;
@@ -464,7 +528,7 @@ function validate(raw){
   showResult("bad","Trabajador no programado", nm, "DNI " + dni, donde, true);
   buzz(false);
   const prog = delDia.find(a => a.TIPO === tipo) || delDia[0] || null;
-  pending = {dni, nombre: nombre || "SIN REGISTRO", nm, donde, prog};
+  pending = {dni, nombre: nombre || "SIN REGISTRO", nm, donde, prog, metodo};
   const s = seats();
   $("askName").textContent = nm + " · DNI " + dni;
   $("askProg").innerHTML = delDia.length
@@ -477,10 +541,10 @@ function validate(raw){
 function closeAsk(permit){
   const p = pending; if(!p) return; pending = null; $("ask").classList.add("hidden");
   if(permit){
-    addReg(p.dni, p.nombre, ST.EXTRA, p.prog);
+    addReg(p.dni, p.nombre, ST.EXTRA, p.prog, p.metodo);
     showResult("warn","Subió sin programación", p.nm, "DNI " + p.dni, `<p class="rx">Registrado como no programado que sí subió.</p>` + p.donde, true);
   } else {
-    addReg(p.dni, p.nombre, ST.INTENTO, p.prog);
+    addReg(p.dni, p.nombre, ST.INTENTO, p.prog, p.metodo);
     showResult("bad","No se permitió subir", p.nm, "DNI " + p.dni, `<p class="rx">Registrado como intento de subir.</p>` + p.donde, true);
   }
   if(autoCam){ $("iDni").blur(); resumeCam(); } else { $("iDni").focus(); }
@@ -542,9 +606,8 @@ $("bManif").onclick = async () => {
 };
 
 // ---------- sincronización con OneDrive ----------
-// Pega aquí la URL del flujo de Power Automate (o del servicio puente) que escribe en REGISTROS_EMBARQUE.xlsx.
-// Mientras esté vacía, los registros quedan guardados en el equipo como PENDIENTES.
-const SYNC_URL = "";
+// Los registros se envían al servidor (/api/registros), que los escribe en REGISTROS_EMBARQUE.xlsx de OneDrive.
+// Si no hay servidor o señal, quedan guardados en el equipo como PENDIENTES.
 let syncing = false;
 const pendientes = () => REG.filter(r => !r.SINC && (isAdmin() || !USER || r.PLACA === USER.PLACA));
 function updateSync(){
@@ -555,20 +618,21 @@ function updateSync(){
 let toastT = null;
 function toast(msg){ const t = $("toast"); t.textContent = msg; t.classList.remove("hidden"); clearTimeout(toastT); toastT = setTimeout(() => t.classList.add("hidden"), 3500); }
 function toRow(r){
-  return {FECHA:fmt(r.FECHA), DNI:r.DNI, APELLIDOS:r.APELLIDOS, PLACA_PROGRAMADA:r.P_PLACA || "", TURNO_PROGRAMADO:r.P_TIPO || "", HORARIO_PROGRAMADO:r.P_HORARIO || "", RUTA_PROGRAMADA:r.P_RUTA || "",
+  return {ID:r.ID, REEMPLAZA:r.REEMPLAZA || [], LECTURA:r.LECTURA || "DIGITADO", FECHA:r.FECHA, DNI:r.DNI, APELLIDOS:r.APELLIDOS, PLACA_PROGRAMADA:r.P_PLACA || "", TURNO_PROGRAMADO:r.P_TIPO || "", HORARIO_PROGRAMADO:r.P_HORARIO || "", RUTA_PROGRAMADA:r.P_RUTA || "",
     PLACA_EJECUTADA:r.PLACA, TURNO_EJECUTADO:r.TIPO, HORA_EJECUTADA:r.HORA, CONDUCTOR:r.CONDUCTOR, ESTADO:r.ESTADO, COINCIDE_PLACA:(r.P_PLACA && r.P_PLACA === r.PLACA) ? "SI" : "NO"};
 }
 async function syncNow(silent){
   if(syncing || !USER) return;
   const list = pendientes();
   if(!list.length){ if(!silent) toast("Todo sincronizado. No hay registros pendientes."); return; }
-  if(!SYNC_URL){ if(!silent) toast(list.length + " registros guardados en este equipo. Falta conectar OneDrive para enviarlos; mientras tanto descarga el manifiesto."); return; }
+  if(!apiOn() || !SESSION){ if(!silent) toast(list.length + " registros guardados en este equipo. Falta conectar OneDrive para enviarlos; mientras tanto descarga el manifiesto."); return; }
   if(!navigator.onLine){ if(!silent) toast("Sin internet. " + list.length + " registros quedan pendientes y se enviarán al volver la señal."); return; }
   syncing = true; $("bSync").classList.add("spin");
   try{
-    const res = await fetch(SYNC_URL, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({placa:USER.PLACA, registros:list.map(toRow)})});
-    if(!res.ok) throw new Error("HTTP " + res.status);
-    list.forEach(r => r.SINC = true); saveReg();
+    const res = await api("/registros", {method:"POST", body:JSON.stringify({registros:list.map(toRow)})});
+    if(res.status === 401){ sesionVencida(); throw new Error("sesión vencida"); }
+    if(!res.ok) throw new Error((res.data && res.data.error) || ("HTTP " + res.status));
+    list.forEach(r => { r.SINC = true; r.REEMPLAZA = []; }); saveReg();
     if(!silent) toast(list.length + " registros sincronizados con OneDrive.");
   }catch(err){
     if(!silent) toast("No se pudo sincronizar (" + err.message + "). Los registros siguen guardados; intenta de nuevo.");
@@ -586,10 +650,12 @@ function makeScanner(){
   const F = Html5QrcodeSupportedFormats;
   return new Html5Qrcode("reader", {verbose:false, formatsToSupport:[F.QR_CODE,F.PDF_417,F.CODE_128,F.CODE_39,F.EAN_13]});
 }
-function onCode(text){
+function onCode(text, result){
+  const formato = (result && result.result && result.result.format && result.result.format.formatName) || "";
+  const metodo = /QR/i.test(formato) ? "QR" : "CÓDIGO DE BARRAS";
   const dni = dniFromCode(text); stopCam();
   if(!dni){ showResult("warn","Código sin DNI","","","Se leyó el código, pero no tiene un DNI de 8 dígitos. Escríbelo a mano."); resumeCam(); return; }
-  validate(dni);
+  validate(dni, metodo);
   $("iDni").blur();
   resumeCam();
 }
@@ -646,25 +712,31 @@ if("serviceWorker" in navigator && window.top === window.self && location.protoc
   });
 }
 
-// ---------- Datos desde la nube (se actualizan solos) ----------
-// La app busca datos/BASE_MAESTRA_ASIGNACIONES.xlsx en el mismo sitio. Al reemplazar ese archivo, todos los celulares se actualizan.
-async function loadRemote(silent){
-  if(location.protocol !== "https:" || window.top !== window.self) return false;
+// ---------- Conexión con OneDrive (servidor /api en Vercel) ----------
+// Los datos (USUARIOS, CAPACIDADES, ASIGNACIONES) se leen del Excel de OneDrive a través del servidor.
+// Se refrescan solos cada minuto, al volver a la app y al tocar Sincronizar.
+async function loadApiData(silent){
+  if(!apiOn() || !SESSION) return false;
   try{
-    const r = await fetch("datos/BASE_MAESTRA_ASIGNACIONES.xlsx?t=" + Date.now(), {cache:"no-store"});
-    if(!r.ok) return false;
-    const wb = XLSX.read(await r.arrayBuffer(), {type:"array"});
+    const r = await api("/datos");
+    if(r.status === 401){ sesionVencida(); return false; }
+    if(!r.ok || !r.data) return false;
     const now = new Date();
-    DATA = parseWorkbook(wb, "NUBE · " + now.toLocaleDateString("es-PE") + " " + pad2(now.getHours()) + ":" + pad2(now.getMinutes()));
+    DATA = {origen:"ONEDRIVE · " + now.toLocaleDateString("es-PE") + " " + pad2(now.getHours()) + ":" + pad2(now.getMinutes()),
+            maestra:r.data.maestra || [], capacidades:r.data.capacidades || [], asignaciones:r.data.asignaciones || []};
     save(); showSrc();
     if(USER && !$("vValid").classList.contains("hidden")){ renderStats(); }
-    if(!silent) toast("Datos actualizados desde la nube.");
+    if(!silent) toast("Datos actualizados desde OneDrive.");
     return true;
   }catch(e){ return false; }
 }
-loadRemote(true);
-document.addEventListener("visibilitychange", () => { if(document.visibilityState === "visible") loadRemote(true); });
-setInterval(() => loadRemote(true), 10 * 60 * 1000);
+const loadRemote = loadApiData;
+function sesionVencida(){
+  SESSION = null; try{ localStorage.removeItem("pv_sesion"); }catch(e){}
+  toast("Tu sesión venció. Sal y vuelve a ingresar con tu placa y contraseña.");
+}
+document.addEventListener("visibilitychange", () => { if(document.visibilityState === "visible" && USER){ loadApiData(true); syncNow(true); } });
+setInterval(() => { if(USER && document.visibilityState === "visible") loadApiData(true); }, 60 * 1000);
 </script>
 </body>
 </html>
