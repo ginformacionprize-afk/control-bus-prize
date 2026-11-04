@@ -226,6 +226,14 @@ h2{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-weight:800;font
   <div class="log"><h3 id="logTitle">Registros de hoy</h3><ul id="logList"><li class="empty">Aún no hay validaciones.</li></ul></div>
 </section>
 
+<div id="instModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="instT">
+  <div class="box">
+    <p class="mt" id="instT">Instalar la app</p>
+    <ol id="instSteps" style="margin:6px 0 16px;padding-left:20px;line-height:1.5"></ol>
+    <button class="btn" type="button" id="instOk">Entendido</button>
+  </div>
+</div>
+
 <div id="ask" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="askT">
   <div class="box">
     <p class="mt" id="askT">¿Permitir subir?</p>
@@ -642,10 +650,50 @@ load(); loadReg(); showSrc(); $("iUser").focus();
 window.addEventListener("load", () => setTimeout(() => loadXlsx().catch(()=>{}), 3000));
 
 // ---------- PWA: instalación y actualización automática ----------
-let installEvt = null;
-window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); installEvt = e; $("bInstall").hidden = false; });
-$("bInstall").onclick = async () => { if(!installEvt) return; installEvt.prompt(); try{ await installEvt.userChoice; }catch(e){} installEvt = null; $("bInstall").hidden = true; };
-window.addEventListener("appinstalled", () => { $("bInstall").hidden = true; toast("App instalada. Ábrela desde el ícono Control Bus."); });
+// El botón solo aparece en el navegador de un celular y cuando la app NO está instalada.
+// Nunca en escritorio ni dentro de la app instalada (PWA).
+const UA = navigator.userAgent || "";
+const esIOS = /iPhone|iPad|iPod/i.test(UA) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const esMovil = esIOS || (navigator.userAgentData && navigator.userAgentData.mobile) || /Android|Mobile|Silk|Opera Mini|IEMobile/i.test(UA);
+const enPWA = () => window.matchMedia("(display-mode: standalone)").matches || window.matchMedia("(display-mode: fullscreen)").matches
+  || navigator.standalone === true || document.referrer.startsWith("android-app://");
+let installEvt = null, instalada = false;
+async function updInstall(){
+  if(!instalada && navigator.getInstalledRelatedApps){
+    try{ instalada = (await navigator.getInstalledRelatedApps()).length > 0; }catch(e){}
+  }
+  $("bInstall").hidden = !(esMovil && !enPWA() && !instalada);
+}
+function pasosInstalar(){
+  const ul = $("instSteps");
+  if(esIOS){
+    const safari = /Safari/i.test(UA) && !/CriOS|FxiOS|EdgiOS|GSA/i.test(UA);
+    ul.innerHTML = (safari ? "" : "<li>Abre esta página en <b>Safari</b>.</li>")
+      + "<li>Toca el botón <b>Compartir</b> (cuadrado con flecha hacia arriba).</li>"
+      + "<li>Elige <b>Agregar a pantalla de inicio</b> y toca <b>Agregar</b>.</li>";
+  } else {
+    ul.innerHTML = "<li>Toca el menú <b>⋮</b> del navegador (arriba a la derecha).</li>"
+      + "<li>Elige <b>Instalar app</b> o <b>Agregar a la pantalla principal</b>.</li>"
+      + "<li>Confirma con <b>Instalar</b>.</li>";
+  }
+  $("instModal").classList.remove("hidden");
+}
+$("instOk").onclick = () => $("instModal").classList.add("hidden");
+window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); installEvt = e; updInstall(); });
+$("bInstall").onclick = async () => {
+  if(installEvt){
+    // Android (Chrome, Edge, Samsung): ventana de instalación nativa
+    const ev = installEvt; installEvt = null;
+    ev.prompt();
+    try{ const c = await ev.userChoice; if(c && c.outcome === "accepted"){ instalada = true; updInstall(); } }catch(e){}
+    return;
+  }
+  // iPhone/iPad o navegador sin instalación automática: instrucciones paso a paso
+  pasosInstalar();
+};
+window.addEventListener("appinstalled", () => { instalada = true; installEvt = null; updInstall(); toast("App instalada. Ábrela desde el ícono Control Bus."); });
+window.matchMedia("(display-mode: standalone)").addEventListener("change", updInstall);
+updInstall();
 
 if("serviceWorker" in navigator && window.top === window.self && location.protocol === "https:"){
   navigator.serviceWorker.register("sw.js").then(reg => {
