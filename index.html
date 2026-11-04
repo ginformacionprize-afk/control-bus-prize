@@ -132,6 +132,12 @@ h2{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-weight:800;font
 .seg button{border:0;background:transparent;padding:12px;font-weight:700;cursor:pointer;color:var(--muted)}
 .seg button[aria-pressed="true"]{background:var(--brand);color:var(--brand-ink)}
 .seg button:focus-visible{outline:3px solid var(--warn);outline-offset:-3px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chips button{border:1.5px solid var(--line);background:var(--field);color:var(--ink);padding:9px 14px;border-radius:999px;font-weight:700;font-size:15px;cursor:pointer}
+.chips button small{font-weight:600;color:var(--muted);margin-left:4px}
+.chips button[aria-pressed="true"]{background:var(--brand);border-color:var(--brand);color:var(--brand-ink)}
+.chips button[aria-pressed="true"] small{color:var(--brand-ink);opacity:.85}
+.chips button:focus-visible{outline:3px solid var(--warn);outline-offset:2px}
 .modal{position:fixed;inset:0;z-index:30;background:rgba(10,20,22,.55);display:flex;align-items:center;justify-content:center;padding:20px}
 .modal .box{background:var(--surface);border-radius:14px;padding:20px;max-width:380px;width:100%;border:1px solid var(--line)}
 .modal .mt{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-weight:800;font-size:24px;margin:0 0 6px}
@@ -206,6 +212,9 @@ h2{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-weight:800;font
       <button type="button" data-tipo="INGRESO" aria-pressed="true">Ingreso</button>
       <button type="button" data-tipo="SALIDA" aria-pressed="false">Salida</button>
     </div>
+  </div>
+  <div class="f hidden" id="horBox"><label id="lHor">Horario programado</label>
+    <div class="chips" id="horChips" role="group" aria-labelledby="lHor"></div>
   </div>
   <div class="stats" aria-live="polite">
     <div class="stat"><b id="kCap">0</b><small>Capacidad</small></div>
@@ -398,6 +407,7 @@ function addReg(dni, nombre, estado, prog, metodo){
     REG = REG.filter(r => !prev(r)); }
   REG.push({FECHA:ctx().f, HORA:pad2(now.getHours())+":"+pad2(now.getMinutes()), PLACA:ctx().placa, CONDUCTOR:USER.CONDUCTOR, TIPO:ctx().tipo, DNI:dni, APELLIDOS:nombre, ESTADO:estado,
     P_PLACA: prog.PLACA || "SIN PROGRAMACIÓN", P_TIPO: prog.TIPO || "", P_HORARIO: prog.HORARIO || "", P_RUTA: prog.RUTA || "",
+    H_SEL: HORARIO, // horario que estaba elegido al registrar (solo local; no se envía al Excel)
     ID: newId(dni, ctx().f, ctx().placa, ctx().tipo), REEMPLAZA: reemplaza, LECTURA: metodo || "DIGITADO"});
   REG[REG.length - 1].SINC = false;
   saveReg(); renderLog(); renderStats(); updateSync(); syncNow(true);
@@ -407,7 +417,33 @@ function addReg(dni, nombre, estado, prog, metodo){
 const isAdmin = () => USER && /ADMIN|SUPERV/.test(USER.ROL);
 let TIPO = "INGRESO";
 const ctx = () => ({ f: $("iFecha").value || hoyISO(), placa: $("sPlaca").value, tipo: TIPO });
-function setTipo(t){ TIPO = t; document.querySelectorAll(".seg button").forEach(b => b.setAttribute("aria-pressed", b.dataset.tipo === t)); $("result").innerHTML = ""; renderStats(); renderLog(); }
+
+// Horario seleccionado ("" = Todos). Los horarios que se ofrecen son los programados para esa placa, fecha y tipo de viaje.
+let HORARIO = "";
+const horaOk = r => !HORARIO || r.H_SEL === HORARIO || r.P_HORARIO === HORARIO; // registro que pertenece al horario elegido
+function horariosProg(){
+  const {f, placa, tipo} = ctx();
+  const m = new Map(); // horario -> personas distintas programadas
+  DATA.asignaciones.filter(a => a.FECHA === f && a.PLACA === placa && a.TIPO === tipo && a.HORARIO)
+    .forEach(a => { if(!m.has(a.HORARIO)) m.set(a.HORARIO, new Set()); m.get(a.HORARIO).add(a.DNI); });
+  return [...m.entries()].map(([h, s]) => ({h, n:s.size})).sort((a,b) => (hhmm(a.h) ?? 9999) - (hhmm(b.h) ?? 9999) || a.h.localeCompare(b.h));
+}
+function renderHorarios(){
+  const lista = horariosProg();
+  if(HORARIO && !lista.some(x => x.h === HORARIO)) HORARIO = ""; // el horario elegido ya no existe para esta placa/fecha/tipo
+  $("horBox").classList.toggle("hidden", lista.length === 0);
+  if(!lista.length){ $("horChips").innerHTML = ""; return; }
+  const total = lista.reduce((a, x) => a + x.n, 0);
+  // Con un solo horario programado se muestra marcado (es el único; equivale a "Todos")
+  const solo = lista.length === 1;
+  const chip = (h, txt, n) => `<button type="button" data-h="${esc(h)}" aria-pressed="${solo || HORARIO === h}">${esc(txt)}<small>${n}</small></button>`;
+  $("horChips").innerHTML = (solo ? "" : chip("", "Todos", total)) + lista.map(x => chip(x.h, x.h, x.n)).join("");
+}
+$("horChips").addEventListener("click", e => {
+  const b = e.target.closest("button[data-h]"); if(!b) return;
+  HORARIO = b.dataset.h; $("result").innerHTML = ""; renderStats(); renderLog();
+});
+function setTipo(t){ TIPO = t; HORARIO = ""; document.querySelectorAll(".seg button").forEach(b => b.setAttribute("aria-pressed", b.dataset.tipo === t)); $("result").innerHTML = ""; renderStats(); renderLog(); }
 document.querySelectorAll(".seg button").forEach(b => b.onclick = () => setTipo(b.dataset.tipo));
 function setupValid(){
   const placas = [...new Set(DATA.maestra.filter(x=>!/ADMIN|SUPERV/.test(x.ROL)).map(x=>x.PLACA).concat(DATA.asignaciones.map(a=>a.PLACA)))].filter(Boolean).sort();
@@ -424,19 +460,20 @@ function seats(){
   const {f, placa, tipo} = ctx();
   const cap = capacidad(placa, f);
   // Cuenta personas distintas (si el Excel repite una fila, no se cuenta dos veces)
-  const prog = new Set(DATA.asignaciones.filter(a => a.FECHA === f && a.PLACA === placa && a.TIPO === tipo).map(a => a.DNI)).size;
-  const regs = REG.filter(r => r.FECHA === f && r.PLACA === placa && r.TIPO === tipo);
+  const prog = new Set(DATA.asignaciones.filter(a => a.FECHA === f && a.PLACA === placa && a.TIPO === tipo && (!HORARIO || a.HORARIO === HORARIO)).map(a => a.DNI)).size;
+  const regs = REG.filter(r => r.FECHA === f && r.PLACA === placa && r.TIPO === tipo && horaOk(r));
   const sub = regs.filter(subio).length;
   const extra = regs.filter(r => r.ESTADO === ST.EXTRA).length;
   return {cap, prog, sub, free: Math.max(cap - prog - extra, 0)};
 }
 function renderStats(){
+  renderHorarios();
   const s = seats();
   $("kCap").textContent = s.cap || "—"; $("kProg").textContent = s.prog; $("kSub").textContent = s.sub; $("kFree").textContent = s.cap ? s.free : "—";
   $("kFreeBox").className = "stat " + (s.cap && s.free === 0 ? "full" : "free");
 }
-$("sPlaca").addEventListener("change", () => { $("result").innerHTML=""; renderStats(); renderLog(); });
-$("iFecha").addEventListener("change", () => { $("result").innerHTML=""; renderStats(); renderLog(); });
+$("sPlaca").addEventListener("change", () => { HORARIO = ""; $("result").innerHTML=""; renderStats(); renderLog(); });
+$("iFecha").addEventListener("change", () => { HORARIO = ""; $("result").innerHTML=""; renderStats(); renderLog(); });
 
 // ---------- validación ----------
 $("iDni").addEventListener("input", e => { e.target.value = e.target.value.replace(/\D/g,"").slice(0,8); });
@@ -463,7 +500,8 @@ function validate(raw, metodo){
     buzz(false); $("iDni").focus(); return;
   }
 
-  const ok = delDia.find(a => a.PLACA === placa && a.TIPO === tipo);
+  // Con un horario elegido, "programado" significa programado en ESE horario (si no, se pregunta como no programado y se muestra su horario real)
+  const ok = delDia.find(a => a.PLACA === placa && a.TIPO === tipo && (!HORARIO || a.HORARIO === HORARIO));
   if(ok){
     addReg(dni, nombre, ST.OK, ok, metodo);
     showResult("ok","Trabajador programado", nombre, "DNI " + dni,
@@ -517,8 +555,8 @@ function showResult(kind, title, name, dni, extra, isHtml){
 function renderLog(){
   if(!USER) return;
   const {f, placa, tipo} = ctx();
-  $("logTitle").textContent = `Registros · ${placa} · ${tipo} · ${fmt(f)}`;
-  const list = REG.filter(r => r.FECHA === f && r.PLACA === placa && r.TIPO === tipo).slice().reverse();
+  $("logTitle").textContent = `Registros · ${placa} · ${tipo}${HORARIO ? " · " + HORARIO : ""} · ${fmt(f)}`;
+  const list = REG.filter(r => r.FECHA === f && r.PLACA === placa && r.TIPO === tipo && horaOk(r)).slice().reverse();
   const ul = $("logList");
   if(!list.length){ ul.innerHTML = '<li class="empty">Aún no hay registros.</li>'; return; }
   const look = { [ST.OK]:["var(--ok)","Subió"], [ST.EXTRA]:["var(--warn)","Subió sin prog."], [ST.INTENTO]:["var(--bad)","Intentó subir"] };
@@ -546,8 +584,8 @@ async function getDownloads(){
 // Manifiesto: solo los que SUBIERON, de la placa, fecha y tipo de viaje seleccionados
 $("bManif").onclick = async () => {
   const {f, placa, tipo} = ctx();
-  const list = REG.filter(r => r.FECHA === f && r.PLACA === placa && r.TIPO === tipo && subio(r));
-  if(!list.length){ toast("No hay pasajeros que hayan subido en " + placa + " · " + tipo + " · " + fmt(f) + "."); return; }
+  const list = REG.filter(r => r.FECHA === f && r.PLACA === placa && r.TIPO === tipo && horaOk(r) && subio(r));
+  if(!list.length){ toast("No hay pasajeros que hayan subido en " + placa + " · " + tipo + (HORARIO ? " · " + HORARIO : "") + " · " + fmt(f) + "."); return; }
   try{ await loadXlsx(); }catch(e){ toast("No se pudo preparar el manifiesto (sin conexión). Intenta de nuevo con señal."); return; }
   const rows = list.map(r => {
     const [y,m,d] = r.FECHA.split("-").map(Number);
@@ -557,7 +595,7 @@ $("bManif").onclick = async () => {
   for(let i = 2; i <= rows.length + 1; i++){ const c = ws["A"+i]; if(c){ c.t = "n"; c.z = "dd/mm/yyyy"; } }
   ws["!cols"] = [12,11,38,15,15,14,32,30].map(w => ({wch:w}));
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "MANIFIESTO");
-  const name = "MANIFIESTO_" + placa + "_" + tipo + "_" + f + ".xlsx";
+  const name = "MANIFIESTO_" + placa + "_" + tipo + (HORARIO ? "_" + HORARIO.replace(":", "") : "") + "_" + f + ".xlsx";
   const buf = XLSX.write(wb, {type:"array", bookType:"xlsx"});
   const dl = await getDownloads();
   if(dl){
