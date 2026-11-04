@@ -104,6 +104,8 @@ h2{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-weight:800;font
 .dni{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-size:28px!important;letter-spacing:3px;text-align:center}
 .scanbtns{display:grid;grid-template-columns:1fr;gap:10px;margin-top:10px}
 #reader{border-radius:12px;overflow:hidden;margin-top:12px;background:#000}
+.cammsg{margin-top:10px;padding:10px 12px;border-radius:10px;background:var(--warn-bg);border-left:4px solid var(--warn);color:var(--ink);font-size:14px;line-height:1.4;display:flex;flex-direction:column;gap:8px}
+.cammsg button{align-self:flex-start;padding:8px 14px;border:0;border-radius:8px;background:var(--warn);color:#fff;font-weight:700;font-size:14px;cursor:pointer}
 
 /* Resultado: debajo del DNI, compacto */
 .result{display:flex;gap:12px;margin-top:14px;padding:14px;border-radius:12px;border:1.5px solid;border-left-width:6px}
@@ -223,6 +225,7 @@ h2{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-weight:800;font
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M7 12h10"/></svg>
       <span id="bCamTxt">Escanear QR / barras</span></button>
   </div>
+  <div id="camMsg" class="cammsg hidden" role="alert"><span id="camMsgTxt"></span><button type="button" id="camRetry">Reintentar</button></div>
   <div id="reader" class="hidden"></div>
   <div id="result" aria-live="polite"></div>
   <button class="btn ghost" type="button" id="bManif" style="margin-top:18px">
@@ -630,6 +633,7 @@ function makeScanner(){
   return new Html5Qrcode("reader", {verbose:false, formatsToSupport:[F.QR_CODE,F.PDF_417,F.CODE_128,F.CODE_39,F.EAN_13]});
 }
 function onCode(text, result){
+  if(leyendo) return; leyendo = true; // el lector repite el mismo código varios cuadros seguidos: se procesa una sola vez
   const formato = (result && result.result && result.result.format && result.result.format.formatName) || "";
   const metodo = /QR/i.test(formato) ? "QR" : "CÓDIGO DE BARRAS";
   const dni = dniFromCode(text); stopCam();
@@ -638,22 +642,71 @@ function onCode(text, result){
   $("iDni").blur();
   resumeCam();
 }
-async function startCam(){
-  try{
-    $("reader").classList.remove("hidden"); await waitQr(); scanner = scanner || makeScanner();
-    await scanner.start({facingMode:"environment"}, {fps:10, qrbox:(w,h)=>({width:Math.min(300,w*0.85), height:Math.min(180,h*0.6)})}, onCode, ()=>{});
-    scanning = true; autoCam = true; $("bCamTxt").textContent = "Detener cámara";
-    try{ localStorage.setItem("pv_cam_ok", "1"); }catch(e){}
-    $("iDni").blur();
-  }catch(err){
-    $("reader").classList.add("hidden");
-    showResult("warn","Cámara no disponible","","", (!window.isSecureContext || !navigator.mediaDevices)
-      ? "La app está abierta como archivo. La cámara solo funciona abriendo la app desde su link https. Mientras tanto, escribe el número."
-      : "No se pudo abrir la cámara. Revisa el permiso de cámara o escribe el número.");
-  }
+// --- Control de la cámara ---
+// Todas las aperturas y cierres pasan por una sola cola: nunca se pide abrir la cámara mientras otra operación sigue en curso
+// (antes, dos reaperturas casi simultáneas hacían fallar la segunda y se mostraba "Cámara no disponible" con la cámara ya activa).
+let camQ = Promise.resolve(), leyendo = false;
+const camOp = fn => (camQ = camQ.then(fn).catch(() => {}));
+const espera = ms => new Promise(r => setTimeout(r, ms));
+function camMsg(txt){ $("camMsg").classList.toggle("hidden", !txt); $("camMsgTxt").textContent = txt || ""; }
+// Libera por completo el lector (y con él la cámara) para poder crear uno nuevo
+async function liberaScanner(){
+  const s = scanner; scanner = null; scanning = false;
+  if(!s) return;
+  try{ await s.stop(); }catch(e){}
+  try{ await s.clear(); }catch(e){}
 }
-function stopCam(){ if(scanner && scanning){ scanner.stop().catch(()=>{}); } scanning = false; $("bCamTxt").textContent = "Escanear QR / barras"; $("reader").classList.add("hidden"); }
+function clasificaCam(err){
+  const nombre = (err && err.name) || "", msg = String((err && err.message) || err || "");
+  if(!window.isSecureContext || !navigator.mediaDevices)
+    return {fatal:true, texto:"La cámara solo funciona desde el link https de la app. Escribe el DNI mientras tanto."};
+  if(/NotAllowed|PermissionDenied|Security/i.test(nombre + msg))
+    return {fatal:true, texto:"El permiso de cámara está bloqueado. Actívalo en los ajustes del navegador (ícono del candado junto a la dirección) o escribe el DNI."};
+  if(/NotFound|DevicesNotFound|Overconstrained|Requested device not found/i.test(nombre + msg))
+    return {fatal:true, texto:"No se encontró una cámara en este equipo. Escribe el DNI."};
+  if(/lector no cargó/i.test(msg))
+    return {fatal:true, texto:"El lector de códigos no cargó. Revisa la señal y toca Reintentar."};
+  if(/NotReadable|TrackStart|Abort|Could not start|in use|busy/i.test(nombre + msg))
+    return {fatal:false, texto:"La cámara está ocupada por otra app o se está cerrando. Cierra las apps que la usen y toca Reintentar."};
+  return {fatal:false, texto:"No se pudo abrir la cámara. Toca Reintentar o escribe el DNI."};
+}
+function startCam(){
+  return camOp(async () => {
+    if(scanning || !enValidacion()) return;
+    camMsg(""); leyendo = false;
+    for(let intento = 0; intento < 3; intento++){
+      try{
+        $("reader").classList.remove("hidden"); await waitQr(); scanner = scanner || makeScanner();
+        await scanner.start({facingMode:"environment"}, {fps:10, qrbox:(w,h)=>({width:Math.min(300,w*0.85), height:Math.min(180,h*0.6)})}, onCode, ()=>{});
+        scanning = true; autoCam = true; $("bCamTxt").textContent = "Detener cámara";
+        try{ localStorage.setItem("pv_cam_ok", "1"); }catch(e){}
+        $("iDni").blur();
+        return;
+      }catch(err){
+        console.warn("Cámara:", err);
+        await liberaScanner(); // un lector que falló queda en mal estado: se descarta y se crea otro
+        const k = clasificaCam(err);
+        if(k.fatal || intento === 2){
+          $("reader").classList.add("hidden"); $("bCamTxt").textContent = "Escanear QR / barras";
+          camMsg(k.texto); return;
+        }
+        await espera(700 * (intento + 1)); // la cámara tarda un instante en liberarse tras cerrarse
+      }
+    }
+  });
+}
+function stopCam(){
+  scanning = false; // de inmediato: ignora lecturas repetidas del mismo código mientras la cámara se cierra
+  $("bCamTxt").textContent = "Escanear QR / barras"; $("reader").classList.add("hidden");
+  return camOp(async () => { if(scanner){ try{ await scanner.stop(); }catch(e){} } });
+}
 $("bCam").onclick = () => { if(scanning){ autoCam = false; stopCam(); } else { startCam(); } };
+$("camRetry").onclick = () => { camMsg(""); startCam(); };
+// Si la app pasa a segundo plano Android corta la cámara: se cierra bien y se reabre al volver
+document.addEventListener("visibilitychange", () => {
+  if(document.visibilityState === "hidden"){ if(scanning) stopCam(); }
+  else if(autoCam && enValidacion() && !pending) resumeCam();
+});
 
 // Cámara directa: si ya se dio permiso antes, se abre sola al entrar y se reabre después de cada validación
 let autoCam = false;
@@ -662,9 +715,11 @@ async function camYaPermitida(){
   try{ return localStorage.getItem("pv_cam_ok") === "1"; }catch(e){ return false; }
 }
 function enValidacion(){ return !$("vValid").classList.contains("hidden"); }
+let resumeT = null;
 function resumeCam(){
   if(!autoCam) return;
-  setTimeout(() => { if(autoCam && !pending && !scanning && enValidacion()) startCam(); }, 1500);
+  clearTimeout(resumeT); // un solo reinicio pendiente a la vez (antes se acumulaban y chocaban)
+  resumeT = setTimeout(() => { if(autoCam && !pending && !scanning && enValidacion()) startCam(); }, 1500);
 }
 
 load(); loadReg(); showSrc(); $("iUser").focus();
