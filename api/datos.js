@@ -12,7 +12,7 @@ module.exports = async (req, res) => {
       maestra: b.usuarios.map(({ CLAVE, ...x }) => x),
       capacidades: b.capacidades,
       asignaciones: b.asignaciones.filter(a => a.FECHA >= desde && a.FECHA <= hasta),
-      actualizado: new Date().toISOString()
+      actualizado: b.leido
     });
   } catch (err) { fail(res, err); }
 };
