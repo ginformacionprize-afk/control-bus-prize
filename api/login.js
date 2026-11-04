@@ -1,6 +1,7 @@
 // GET  /api/login?placa=XXX  -> rol de la placa (para mostrarlo al escribir)
 // POST /api/login {placa, clave} -> sesión
 const { U, hoyLima, base, vigente, sign, fail } = require("../lib/onedrive");
+const limite = require("../lib/limite");
 
 module.exports = async (req, res) => {
   res.setHeader("Cache-Control", "no-store");
@@ -17,8 +18,14 @@ module.exports = async (req, res) => {
     }
     if (req.method !== "POST") return res.status(405).json({ error: "Método no permitido" });
     const placa = U(req.body && req.body.placa), clave = String((req.body && req.body.clave) || "").trim();
+    const espera = limite.bloqueado(req, placa);
+    if (espera) {
+      res.setHeader("Retry-After", String(espera));
+      return res.status(429).json({ error: `Demasiados intentos fallidos. Espera ${Math.ceil(espera / 60)} min e inténtalo de nuevo.` });
+    }
     const rows = usuarios.filter(x => x.PLACA === placa && x.CLAVE === clave);
-    if (!rows.length) return res.status(401).json({ error: "Placa o contraseña incorrectas." });
+    if (!rows.length) { limite.falla(req, placa); return res.status(401).json({ error: "Placa o contraseña incorrectas." }); }
+    limite.acierta(req, placa);
     const r = rows.find(x => vigente(x, hoy));
     if (!r) return res.status(403).json({ error: `La placa ${placa} no tiene conductor asignado para hoy. Revisa las fechas en USUARIOS.` });
     const user = { PLACA: r.PLACA, ROL: r.ROL, CONDUCTOR: r.CONDUCTOR };

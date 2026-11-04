@@ -69,6 +69,10 @@ input:disabled,select:disabled{opacity:.75}
 .err{color:var(--bad);font-weight:600;font-size:14px;margin:-4px 0 14px}
 .err:empty{display:none}
 .foot{margin-top:18px;text-align:center;font-size:14px;color:var(--muted)}
+.syncstat{max-width:560px;margin:8px auto 0;padding:7px 12px;border-radius:8px;font-size:14px;font-weight:600;text-align:center;background:var(--field);color:var(--muted)}
+.syncstat.run{background:var(--warn-bg);color:var(--warn)}
+.syncstat.ok{background:var(--ok-bg);color:var(--ok)}
+.syncstat.bad{background:var(--bad-bg);color:var(--bad)}
 .link{background:none;border:0;color:var(--brand);font-weight:600;cursor:pointer;text-decoration:underline;padding:4px}
 
 .top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--brand);color:var(--brand-ink)}
@@ -177,6 +181,7 @@ h2{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-weight:800;font
   <button type="button" id="bBack" class="hidden">Inicio</button>
   <button type="button" id="bOut">Salir</button>
 </div></header>
+<div id="syncStat" class="syncstat hidden" role="status" aria-live="polite"></div>
 
 <section id="vHome" class="wrap hidden">
   <h2>Menú</h2>
@@ -361,7 +366,7 @@ function entrar(r){
   document.body.classList.add("app"); $("vLogin").classList.add("hidden"); $("topbar").classList.remove("hidden");
   setupValid(); go("vHome"); updateSync(); syncNow(true);
 }
-$("bOut").onclick = () => { stopCam(); USER = null; SESSION = null; try{ localStorage.removeItem("pv_sesion"); }catch(e){} $("result").innerHTML = ""; $("ask").classList.add("hidden"); pending = null;
+$("bOut").onclick = () => { stopCam(); USER = null; SESSION = null; setStat("", ""); try{ localStorage.removeItem("pv_sesion"); }catch(e){} $("result").innerHTML = ""; $("ask").classList.add("hidden"); pending = null;
   document.body.classList.remove("app"); ["vHome","vValid","topbar"].forEach(id=>$(id).classList.add("hidden"));
   $("vLogin").classList.remove("hidden"); $("iUser").value=""; $("roleVal").textContent=""; $("iUser").focus(); };
 
@@ -576,25 +581,40 @@ function toRow(r){
   return {ID:r.ID, REEMPLAZA:r.REEMPLAZA || [], LECTURA:r.LECTURA || "DIGITADO", FECHA:r.FECHA, DNI:r.DNI, APELLIDOS:r.APELLIDOS, PLACA_PROGRAMADA:r.P_PLACA || "", TURNO_PROGRAMADO:r.P_TIPO || "", HORARIO_PROGRAMADO:r.P_HORARIO || "", RUTA_PROGRAMADA:r.P_RUTA || "",
     PLACA_EJECUTADA:r.PLACA, TURNO_EJECUTADO:r.TIPO, HORA_EJECUTADA:r.HORA, CONDUCTOR:r.CONDUCTOR, ESTADO:r.ESTADO, COINCIDE_PLACA:(r.P_PLACA && r.P_PLACA === r.PLACA) ? "SI" : "NO"};
 }
+// Estado visible de la sincronización: refleja lo que realmente pasa (también en envíos automáticos)
+let statT = null;
+function setStat(kind, msg, ms){
+  const s = $("syncStat"); clearTimeout(statT);
+  if(!msg){ s.classList.add("hidden"); return; }
+  s.className = "syncstat " + kind; s.textContent = msg;
+  if(ms) statT = setTimeout(() => s.classList.add("hidden"), ms);
+}
+const nReg = n => n + (n === 1 ? " registro" : " registros");
 async function syncNow(silent){
   if(syncing || !USER) return;
   const list = pendientes();
   if(!list.length){ if(!silent) toast("Todo sincronizado. No hay registros pendientes."); return; }
-  if(!apiOn() || !SESSION){ if(!silent) toast(list.length + " registros guardados en este equipo. Falta conectar OneDrive para enviarlos; mientras tanto descarga el manifiesto."); return; }
-  if(!navigator.onLine){ if(!silent) toast("Sin internet. " + list.length + " registros quedan pendientes y se enviarán al volver la señal."); return; }
+  if(!apiOn() || !SESSION){ setStat("bad", nReg(list.length) + " sin enviar: falta conectar con OneDrive."); if(!silent) toast(list.length + " registros guardados en este equipo. Falta conectar OneDrive para enviarlos; mientras tanto descarga el manifiesto."); return; }
+  if(!navigator.onLine){ setStat("bad", "Sin señal: " + nReg(list.length) + " pendiente" + (list.length === 1 ? "" : "s") + ". Se enviarán al volver la señal."); if(!silent) toast("Sin internet. " + list.length + " registros quedan pendientes y se enviarán al volver la señal."); return; }
   syncing = true; $("bSync").classList.add("spin");
+  setStat("run", "Sincronizando " + nReg(list.length) + " con OneDrive…");
   try{
     const res = await api("/registros", {method:"POST", body:JSON.stringify({registros:list.map(toRow)})});
     if(res.status === 401){ sesionVencida(); throw new Error("sesión vencida"); }
     if(!res.ok) throw new Error((res.data && res.data.error) || ("HTTP " + res.status));
     list.forEach(r => { r.SINC = true; r.REEMPLAZA = []; }); saveReg();
+    const d = new Date();
+    setStat("ok", "✓ " + nReg(list.length) + " sincronizado" + (list.length === 1 ? "" : "s") + " con OneDrive a las " + pad2(d.getHours()) + ":" + pad2(d.getMinutes()), 6000);
     if(!silent) toast(list.length + " registros sincronizados con OneDrive.");
   }catch(err){
+    setStat("bad", "No se pudo sincronizar (" + err.message + "). " + nReg(list.length) + " guardado" + (list.length === 1 ? "" : "s") + " en este equipo; se reintentará.");
     if(!silent) toast("No se pudo sincronizar (" + err.message + "). Los registros siguen guardados; intenta de nuevo.");
   }finally{
     syncing = false; $("bSync").classList.remove("spin"); updateSync();
   }
 }
+// Reintento automático cada 2 min mientras haya pendientes (por si falló o no había señal)
+setInterval(() => { if(USER && !syncing && document.visibilityState === "visible" && pendientes().length) syncNow(true); }, 2 * 60 * 1000);
 $("bSync").onclick = async () => { await loadRemote(true); syncNow(false); };
 window.addEventListener("online", () => syncNow(true));
 
