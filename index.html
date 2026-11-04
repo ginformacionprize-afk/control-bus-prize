@@ -253,37 +253,21 @@ const fmt = s => s ? s.slice(8,10)+"/"+s.slice(5,7)+"/"+s.slice(0,4) : "";
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const hhmm = s => { const m = String(s).match(/(\d{1,2})[:.h](\d{2})/); return m ? (+m[1])*60 + (+m[2]) : null; };
 
-// ---------- datos de prueba (fechas relativas a hoy) ----------
-function demo(){
-  const h = hoyISO(), m = addDays(h,1);
-  const asg = [];
-  [h,m].forEach(f => asg.push(
-    {FECHA:f,DNI:"73011499",APELLIDOS:"HERNANDEZ OBLITAS ANTHONY JESUS",PLACA:"T4H-851",TIPO:"INGRESO",HORARIO:"05:30",RUTA:"HUANCHACO - FUNDO AQU1"},
-    {FECHA:f,DNI:"70263051",APELLIDOS:"LLANOS BECERRA MERLY LISSET",PLACA:"T4H-851",TIPO:"INGRESO",HORARIO:"05:30",RUTA:"HUANCHACO - FUNDO AQU1"},
-    {FECHA:f,DNI:"70657159",APELLIDOS:"AGREDA SANTILLAN ANGEL MARIANO",PLACA:"BDF-302",TIPO:"INGRESO",HORARIO:"05:30",RUTA:"TRUJILLO - FUNDO AQ3"},
-    {FECHA:f,DNI:"77487495",APELLIDOS:"AREDO VARGAS ERICK ANDERSON",PLACA:"T4H-851",TIPO:"SALIDA",HORARIO:"17:30",RUTA:"FUNDO AQU1 - HUANCHACO"},
-    {FECHA:f,DNI:"47508018",APELLIDOS:"VASQUEZ SANTIAGO WALDIR ANDERSON",PLACA:"BDF-302",TIPO:"SALIDA",HORARIO:"17:30",RUTA:"FUNDO AQ3 - TRUJILLO"}));
-  return {
-    origen:"DATOS DE PRUEBA",
-    maestra:[
-      {PLACA:"ADMIN",CLAVE:"admin123",ROL:"ADMINISTRADOR",CONDUCTOR:"ADMINISTRADOR GENERAL",INICIO:"",FIN:""},
-      {PLACA:"T4H-851",CLAVE:"4851",ROL:"CONDUCTOR",CONDUCTOR:"RAMIREZ SALAZAR JOSE LUIS",INICIO:addDays(h,-30),FIN:addDays(h,10)},
-      {PLACA:"T4H-851",CLAVE:"4851",ROL:"CONDUCTOR",CONDUCTOR:"CASTILLO RUIZ PEDRO MANUEL",INICIO:addDays(h,11),FIN:addDays(h,40)},
-      {PLACA:"BDF-302",CLAVE:"7302",ROL:"CONDUCTOR",CONDUCTOR:"GUEVARA PAREDES LUIS ALBERTO",INICIO:addDays(h,-30),FIN:addDays(h,40)}
-    ],
-    capacidades:[
-      {PLACA:"T4H-851",INICIO:addDays(h,-30),FIN:addDays(h,60),CAPACIDAD:30},
-      {PLACA:"BDF-302",INICIO:addDays(h,-30),FIN:addDays(h,60),CAPACIDAD:25}
-    ],
-    asignaciones:asg
-  };
+// ---------- datos (solo los que llegan de OneDrive) ----------
+const KEY = "pv_datos_v5";
+const vacio = () => ({sync:"", maestra:[], capacidades:[], asignaciones:[]});
+let DATA = vacio(), USER = null, scanner = null, scanning = false;
+function load(){
+  try{
+    localStorage.removeItem("pv_datos_v4"); // datos de prueba / Excel manual de versiones anteriores
+    const s = localStorage.getItem(KEY); if(s){ const d = JSON.parse(s); if(d && d.maestra && d.asignaciones && d.capacidades) DATA = d; }
+  }catch(e){}
 }
-
-const KEY = "pv_datos_v4";
-let DATA = demo(), USER = null, scanner = null, scanning = false;
-function load(){ try{ const s = localStorage.getItem(KEY); if(s){ const d = JSON.parse(s); if(d && d.maestra && d.asignaciones && d.capacidades) DATA = d; } }catch(e){} }
 function save(){ try{ localStorage.setItem(KEY, JSON.stringify(DATA)); }catch(e){} }
-function showSrc(){ $("srcInfo").textContent = "Fuente: " + DATA.origen + " · " + new Set(DATA.maestra.map(x=>x.PLACA)).size + " placas, " + DATA.asignaciones.length + " asignaciones"; }
+function showSrc(){
+  const d = DATA.sync ? new Date(DATA.sync) : null;
+  $("srcInfo").textContent = d && !isNaN(d) ? "Última sincronización con OneDrive: " + fmt(iso(d)) + " " + pad2(d.getHours()) + ":" + pad2(d.getMinutes()) : "";
+}
 
 // ---------- servidor ----------
 const API = "/api";
@@ -350,7 +334,7 @@ $("fLogin").addEventListener("submit", async e => {
     }
   }
 
-  // 3) Modo local (pruebas o Excel cargado a mano)
+  // 3) Sin servidor: solo con datos ya sincronizados en este equipo
   const rows = DATA.maestra.filter(x => x.PLACA === placa && x.CLAVE === pass);
   if(!rows.length){ $("loginErr").textContent = "Placa o contraseña incorrectas."; return; }
   const r = rows.find(x => vigente(x, hoyISO()));
@@ -667,8 +651,7 @@ async function loadApiData(silent){
     const r = await api("/datos");
     if(r.status === 401){ sesionVencida(); return false; }
     if(!r.ok || !r.data) return false;
-    const now = new Date();
-    DATA = {origen:"ONEDRIVE · " + now.toLocaleDateString("es-PE") + " " + pad2(now.getHours()) + ":" + pad2(now.getMinutes()),
+    DATA = {sync:r.data.actualizado || new Date().toISOString(),
             maestra:r.data.maestra || [], capacidades:r.data.capacidades || [], asignaciones:r.data.asignaciones || []};
     save(); showSrc();
     if(USER && !$("vValid").classList.contains("hidden")){ renderStats(); }
