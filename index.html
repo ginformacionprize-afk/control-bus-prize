@@ -134,9 +134,7 @@ h2{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-weight:800;font
 .seg button:focus-visible{outline:3px solid var(--warn);outline-offset:-3px}
 .chips{display:flex;flex-wrap:wrap;gap:8px}
 .chips button{border:1.5px solid var(--line);background:var(--field);color:var(--ink);padding:9px 14px;border-radius:999px;font-weight:700;font-size:15px;cursor:pointer}
-.chips button small{font-weight:600;color:var(--muted);margin-left:4px}
 .chips button[aria-pressed="true"]{background:var(--brand);border-color:var(--brand);color:var(--brand-ink)}
-.chips button[aria-pressed="true"] small{color:var(--brand-ink);opacity:.85}
 .chips button:focus-visible{outline:3px solid var(--warn);outline-offset:2px}
 .modal{position:fixed;inset:0;z-index:30;background:rgba(10,20,22,.55);display:flex;align-items:center;justify-content:center;padding:20px}
 .modal .box{background:var(--surface);border-radius:14px;padding:20px;max-width:380px;width:100%;border:1px solid var(--line)}
@@ -433,11 +431,10 @@ function renderHorarios(){
   if(HORARIO && !lista.some(x => x.h === HORARIO)) HORARIO = ""; // el horario elegido ya no existe para esta placa/fecha/tipo
   $("horBox").classList.toggle("hidden", lista.length === 0);
   if(!lista.length){ $("horChips").innerHTML = ""; return; }
-  const total = lista.reduce((a, x) => a + x.n, 0);
   // Con un solo horario programado se muestra marcado (es el único; equivale a "Todos")
   const solo = lista.length === 1;
-  const chip = (h, txt, n) => `<button type="button" data-h="${esc(h)}" aria-pressed="${solo || HORARIO === h}">${esc(txt)}<small>${n}</small></button>`;
-  $("horChips").innerHTML = (solo ? "" : chip("", "Todos", total)) + lista.map(x => chip(x.h, x.h, x.n)).join("");
+  const chip = (h, txt) => `<button type="button" data-h="${esc(h)}" aria-pressed="${solo || HORARIO === h}">${esc(txt)}</button>`;
+  $("horChips").innerHTML = (solo ? "" : chip("", "Todos")) + lista.map(x => chip(x.h, x.h)).join("");
 }
 $("horChips").addEventListener("click", e => {
   const b = e.target.closest("button[data-h]"); if(!b) return;
