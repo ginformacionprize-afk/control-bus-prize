@@ -46,3 +46,11 @@ Después: **Deployments → … → Redeploy**.
 - **Nombres de tablas y hojas:** no cambiar los nombres de las tablas de Excel (USUARIOS, CAPACIDADES, ASIGNACIONES, REGISTROS) ni de las columnas.
 - **Filas nuevas:** agregarlas dentro de la tabla, pegando justo debajo de la última fila para que la tabla se expanda sola.
 - **ID REGISTRO:** la columna `ID REGISTRO` de REGISTROS la llena la app. Evita duplicados; no editarla.
+
+## Sesión de todo el día
+- Al ingresar con la placa y la contraseña, la sesión **vale hasta las 12 de la noche (hora de Lima)**. Antes la app no recordaba quién había ingresado: cualquier recarga (una actualización de la app, el celular cerrándola en segundo plano, reabrirla) pedía la placa y la contraseña otra vez.
+- Ahora, durante el día, **al reabrir o recargar la app se entra sola**, sin pedir nada, y envía lo que haya quedado pendiente.
+- **La falta de señal nunca saca de la app.** Sin señal se sigue trabajando con lo guardado y se envía solo al volver la señal.
+- Solo cuando el servidor responde que la sesión terminó (pasó la medianoche) la app vuelve a la pantalla de ingreso. Lo que estaba guardado en el celular **no se borra**: se envía solo cuando la persona vuelve a ingresar.
+- Si alguien abre la app después de la medianoche y hay señal, pide ingresar; sin señal entra igual con lo guardado, porque sin internet no se podría volver a ingresar.
+- El botón **Salir** cierra la sesión cuando la persona lo decide.

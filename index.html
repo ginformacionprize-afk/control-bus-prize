@@ -348,7 +348,7 @@ $("fLogin").addEventListener("submit", async e => {
     if(r && r.status !== 404 && r.data){
       try{ localStorage.setItem("pv_api_on","1"); }catch(e){}
       if(!r.ok){ $("loginErr").textContent = r.data.error || "No se pudo ingresar."; return; }
-      SESSION = {token:r.data.token}; try{ localStorage.setItem("pv_sesion", JSON.stringify(SESSION)); }catch(e){}
+      SESSION = {token:r.data.token, user:r.data.user, exp:r.data.exp}; try{ localStorage.setItem("pv_sesion", JSON.stringify(SESSION)); }catch(e){} // se recuerda quién ingresó y hasta cuándo vale (12 de la noche)
       try{ localStorage.setItem("pv_off_" + placa, JSON.stringify({h: await sha(placa + "|" + pass), user:r.data.user, dia:hoyISO()})); }catch(e){}
       await loadApiData(true);
       return entrar(r.data.user);
@@ -376,9 +376,14 @@ function entrar(r){
   document.body.classList.add("app"); $("vLogin").classList.add("hidden"); $("topbar").classList.remove("hidden");
   setupValid(); go("vHome"); updateSync(); syncNow(true);
 }
-$("bOut").onclick = () => { stopCam(); USER = null; SESSION = null; setStat("", ""); try{ localStorage.removeItem("pv_sesion"); }catch(e){} $("result").innerHTML = ""; $("ask").classList.add("hidden"); pending = null;
+// Volver a la pantalla de ingreso. Los registros del equipo NO se borran: quedan guardados y se envían solos cuando la persona vuelve a ingresar.
+function salirUI(msg){
+  stopCam(); USER = null; SESSION = null; setStat("", ""); try{ localStorage.removeItem("pv_sesion"); }catch(e){} $("result").innerHTML = ""; $("ask").classList.add("hidden"); pending = null;
   document.body.classList.remove("app"); ["vHome","vValid","topbar"].forEach(id=>$(id).classList.add("hidden"));
-  $("vLogin").classList.remove("hidden"); $("iUser").value=""; $("roleVal").textContent=""; $("iUser").focus(); };
+  $("vLogin").classList.remove("hidden"); $("iUser").value=""; $("roleVal").textContent=""; $("iUser").focus();
+  if(msg) toast(msg);
+}
+$("bOut").onclick = () => salirUI();
 
 function go(v){ stopCam(); ["vHome","vValid"].forEach(id => $(id).classList.toggle("hidden", id !== v)); $("bBack").classList.toggle("hidden", v === "vHome"); window.scrollTo(0,0); }
 $("bBack").onclick = () => go("vHome");
@@ -655,6 +660,18 @@ async function syncNow(silent){
 setInterval(() => { if(USER && !syncing && document.visibilityState === "visible" && pendientes().length) syncNow(true); }, 2 * 60 * 1000);
 $("bSync").onclick = async () => { await loadRemote(true); syncNow(false); };
 window.addEventListener("online", () => syncNow(true));
+// La sesión se recuerda TODO el día: al reabrir o recargar la app (actualizaciones, el celular cierra la app en segundo plano) se entra sola, sin pedir de nuevo
+// la placa y la contraseña. Solo se pide ingresar pasada la medianoche (hora de Lima) y si hay señal; sin señal nunca se saca al conductor.
+function restauraSesion(){
+  if(!SESSION || !SESSION.token || !SESSION.user) return false;
+  if(SESSION.exp && Date.now() > SESSION.exp && navigator.onLine){
+    SESSION = null; try{ localStorage.removeItem("pv_sesion"); }catch(e){}
+    toast("Tu sesión terminó (dura hasta las 12 de la noche). Ingresa de nuevo con tu placa y contraseña.");
+    return false;
+  }
+  entrar(SESSION.user); loadApiData(true);
+  return true;
+}
 
 // ---------- escaneo QR / código de barras ----------
 function dniFromCode(text){ const t = String(text||""); const m = t.match(/(?<!\d)\d{8}(?!\d)/) || t.match(/\d{8}/); return m ? m[0] : ""; }
@@ -817,6 +834,7 @@ $("bInstall").onclick = async () => {
 window.addEventListener("appinstalled", () => { instalada = true; installEvt = null; updInstall(); toast("App instalada. Ábrela desde el ícono Control Bus."); });
 window.matchMedia("(display-mode: standalone)").addEventListener("change", updInstall);
 updInstall();
+restauraSesion(); // al final del script, cuando todo ya está definido
 
 if("serviceWorker" in navigator && window.top === window.self && location.protocol === "https:"){
   navigator.serviceWorker.register("sw.js").then(reg => {
@@ -852,9 +870,11 @@ async function loadApiData(silent){
   }catch(e){ return false; }
 }
 const loadRemote = loadApiData;
+// Solo se llega aquí cuando el SERVIDOR responde que la sesión ya terminó (pasó la medianoche): la falta de señal nunca saca de la app.
 function sesionVencida(){
-  SESSION = null; try{ localStorage.removeItem("pv_sesion"); }catch(e){}
-  toast("Tu sesión venció. Sal y vuelve a ingresar con tu placa y contraseña.");
+  if(!USER) return;
+  if(pending){ setTimeout(sesionVencida, 3000); return; } // no se interrumpe una decisión a medias
+  salirUI("Tu sesión terminó (dura hasta las 12 de la noche). Ingresa de nuevo con tu placa y contraseña; lo guardado en el celular se enviará solo.");
 }
 document.addEventListener("visibilitychange", () => { if(document.visibilityState === "visible" && USER){ loadApiData(true); syncNow(true); } });
 setInterval(() => { if(USER && document.visibilityState === "visible") loadApiData(true); }, 60 * 1000);
