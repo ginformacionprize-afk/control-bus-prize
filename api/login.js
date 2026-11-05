@@ -1,6 +1,6 @@
 // GET  /api/login?placa=XXX  -> rol de la placa (para mostrarlo al escribir)
-// POST /api/login {placa, clave} -> sesión
-const { U, hoyLima, base, vigente, sign, fail } = require("../lib/onedrive");
+// POST /api/login {placa, clave} -> sesión (vale hasta las 12 de la noche, hora de Lima)
+const { U, hoyLima, addDays, base, vigente, sign, fail } = require("../lib/onedrive");
 const limite = require("../lib/limite");
 
 module.exports = async (req, res) => {
@@ -29,7 +29,9 @@ module.exports = async (req, res) => {
     const r = rows.find(x => vigente(x, hoy));
     if (!r) return res.status(403).json({ error: `La placa ${placa} no tiene conductor asignado para hoy. Revisa las fechas en USUARIOS.` });
     const user = { PLACA: r.PLACA, ROL: r.ROL, CONDUCTOR: r.CONDUCTOR };
-    const token = sign({ p: r.PLACA, r: r.ROL, c: r.CONDUCTOR, exp: Date.now() + 24 * 3600 * 1000 });
-    res.json({ token, user });
+    // La sesión dura TODO el día: vence a las 12 de la noche (hora de Lima). Dentro del día no se pierde; al día siguiente pide ingresar de nuevo.
+    const exp = Date.parse(addDays(hoy, 1) + "T00:00:00Z") + 5 * 3600 * 1000;
+    const token = sign({ p: r.PLACA, r: r.ROL, c: r.CONDUCTOR, exp });
+    res.json({ token, exp, user });
   } catch (err) { fail(res, err); }
 };
